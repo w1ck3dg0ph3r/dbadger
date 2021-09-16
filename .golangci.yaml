@@ -1,0 +1,89 @@
+run:
+  tests: false
+  skip-dirs:
+  - test
+
+linters:
+  disable-all: true
+  enable:
+  - errcheck
+  - gosimple
+  - govet
+  - ineffassign
+  - staticcheck
+  - typecheck
+  - unused
+  - asasalint
+  - containedctx
+  - contextcheck
+  - cyclop
+  - decorder
+  - depguard
+  - dogsled
+  - dupl
+  - durationcheck
+  - errchkjson
+  - errname
+  - errorlint
+  - exhaustive
+  # - exhaustruct
+  - exportloopref
+  # - forbidigo
+  - forcetypeassert
+  - funlen
+  - gocheckcompilerdirectives
+  - gochecknoglobals
+  - gochecknoinits
+  - goconst
+  - gocritic
+  - godot
+  - godox
+  - gofmt
+  - goheader
+  - goimports
+  # - gomnd
+  - gosec
+  - grouper
+  - importas
+  - interfacebloat
+  - ireturn
+  # - lll
+  - makezero
+  - misspell
+  - nakedret
+  - nestif
+  - nilerr
+  - nilnil
+  - nolintlint
+  - nosprintfhostport
+  # - paralleltest
+  - prealloc
+  # - predeclared
+  - reassign
+  - revive
+  # - tagliatelle
+  - tenv
+  - testableexamples
+  - thelper
+  - tparallel
+  - unconvert
+  - unparam
+  - usestdlibvars
+  # - varnamelen
+  - wastedassign
+  # - wrapcheck
+
+linters-settings:
+  exhaustive:
+    default-signifies-exhaustive: true
+  gocritic:
+    disabled-checks:
+    - ifElseChain
+  cyclop:
+    max-complexity: 20
+
+issues:
+  exclude-rules:
+    - path: 'internal/stores/(badger|data|log)\.go'
+      linters:
+        - errorlint

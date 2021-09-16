@@ -1,0 +1,183 @@
+syntax = "proto3";
+package dbadger;
+option go_package = "github.com/w1ck3dg0ph3r/dbadger/internal/rpc";
+
+service Service {
+  rpc AddPeer(CommandAddPeer) returns (ResultAddPeer) {}
+  rpc RemovePeer(CommandRemovePeer) returns (ResultRemovePeer) {}
+
+  rpc Get(CommandGet) returns (ResultGet) {}
+  rpc GetMany(CommandGetMany) returns (ResultGetMany) {}
+  rpc GetPrefix(CommandGetPrefix) returns (ResultGetPrefix) {}
+  rpc GetRange(CommandGetRange) returns (ResultGetRange) {}
+
+  rpc Set(CommandSet) returns (ResultSet) {}
+  rpc SetMany(CommandSetMany) returns (ResultSetMany) {}
+
+  rpc Delete(CommandDelete) returns (ResultDelete) {}
+  rpc DeleteMany(CommandDeleteMany) returns (ResultDeleteMany) {}
+  rpc DeletePrefix(CommandDeletePrefix) returns (ResultDeletePrefix) {}
+  rpc DeleteRange(CommandDeleteRange) returns (ResultDeleteRange) {}
+  rpc DeleteAll(CommandDeleteAll) returns (ResultDeleteAll) {}
+}
+
+message Command {
+  oneof command {
+    CommandAddPeer addPeer = 1;
+    CommandRemovePeer removePeer = 2;
+    CommandGet get = 3;
+    CommandGetMany getMany = 4;
+    CommandGetPrefix getPrefix = 5;
+    CommandGetRange getRange = 6;
+    CommandSet set = 7;
+    CommandSetMany setMany = 8;
+    CommandDelete delete = 9;
+    CommandDeleteMany deleteMany = 10;
+    CommandDeletePrefix deletePrefix = 11;
+    CommandDeleteRange deleteRange = 12;
+    CommandDeleteAll deleteAll = 13;
+  }
+}
+
+message Result {
+  oneof result {
+    ResultAddPeer addPeer = 1;
+    ResultRemovePeer removePeer = 2;
+    ResultGet get = 3;
+    ResultGetMany getMany = 4;
+    ResultGetPrefix getPrefix = 5;
+    ResultGetRange getRange = 6;
+    ResultSet set = 7;
+    ResultSetMany setMany = 8;
+    ResultDelete delete = 9;
+    ResultDeleteMany deleteMany = 10;
+    ResultDeletePrefix deletePrefix = 11;
+    ResultDeleteRange deleteRange = 12;
+    ResultDeleteAll deleteAll = 13;
+  }
+}
+
+message CommandAddPeer {
+  string addr = 1;
+}
+
+message CommandRemovePeer {
+  string addr = 1;
+}
+
+message CommandGet {
+  ReadPreference readPreference = 1;
+  bytes key = 2;
+}
+
+message CommandGetMany {
+  ReadPreference readPreference = 1;
+  repeated bytes keys = 2;
+}
+
+message CommandGetPrefix {
+  ReadPreference readPreference = 1;
+  bytes prefix = 2;
+}
+
+message CommandGetRange {
+  ReadPreference readPreference = 1;
+  bytes min = 2;
+  bytes max = 3;
+  uint64 count = 4;
+}
+
+message CommandSet {
+  bytes key = 1;
+  bytes value = 2;
+}
+
+message CommandSetMany {
+  repeated bytes keys = 1;
+  repeated bytes values = 2;
+}
+
+message CommandDelete {
+  bytes key = 1;
+}
+
+message CommandDeleteMany {
+  repeated bytes keys = 1;
+}
+
+message CommandDeletePrefix {
+  bytes prefix = 1;
+}
+
+message CommandDeleteRange {
+  bytes min = 1;
+  bytes max = 2;
+}
+
+message CommandDeleteAll {
+}
+
+message ResultAddPeer {
+}
+
+message ResultRemovePeer {
+}
+
+message ResultGet {
+  bytes value = 1;
+}
+
+message ResultGetMany {
+  repeated bytes values = 1;
+}
+
+message ResultGetPrefix {
+  repeated bytes keys = 1;
+  repeated bytes values = 2;
+}
+
+message ResultGetRange {
+  repeated bytes keys = 1;
+  repeated bytes values = 2;
+}
+
+message ResultSet {
+}
+
+message ResultSetMany {
+}
+
+message ResultDelete {
+}
+
+message ResultDeleteMany {
+}
+
+message ResultDeletePrefix {
+}
+
+message ResultDeleteRange {
+  repeated bytes keys = 1;
+}
+
+message ResultDeleteAll {
+}
+
+message Error {
+  enum Code {
+    NO_LEADER = 0;
+    EMPTY_KEY = 1;
+    INVALID_KEY = 2;
+    NOT_FOUND = 3;
+    INVALID_REQUEST = 4;
+    CONFLICT = 5;
+    UNAVAILABLE = 6;
+  }
+
+  Code code = 1;
+}
+
+enum ReadPreference {
+  LEADER = 0;
+  LOCAL = 1;
+}
