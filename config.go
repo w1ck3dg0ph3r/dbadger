@@ -41,6 +41,7 @@ func DefaultConfig(path string, bind Address) *Config {
 
 func DefaultConfigInMemory(bind Address) *Config {
 	return &Config{
+		Bind:     bind,
 		InMemory: true,
 	}
 }
