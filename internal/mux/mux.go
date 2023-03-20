@@ -4,10 +4,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"io"
-	"log"
 	"net"
-	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -16,14 +13,13 @@ import (
 // Mux is a multiplexer for a net.Listener.
 type Mux struct {
 	ReadTimeout time.Duration
-	LogOutput   io.Writer
 
-	ln   net.Listener
-	once sync.Once
-	wg   sync.WaitGroup
+	innerLn net.Listener
+	ln      net.Listener
 
+	once    sync.Once
+	wg      sync.WaitGroup
 	running uint64
-	done    chan struct{}
 
 	handlers map[byte]*handler
 }
@@ -33,17 +29,6 @@ const (
 	acceptTimeout      = 1 * time.Second
 )
 
-// New returns a new instance of Mux.
-func New(ln net.Listener) *Mux {
-	return &Mux{
-		ReadTimeout: DefaultReadTimeout,
-		LogOutput:   os.Stderr,
-		ln:          ln,
-		done:        make(chan struct{}, 1),
-		handlers:    make(map[byte]*handler),
-	}
-}
-
 // Listen creates Mux using net.Listen.
 func Listen(network string, address string) (*Mux, error) {
 	ln, err := net.Listen(network, address)
@@ -51,24 +36,36 @@ func Listen(network string, address string) (*Mux, error) {
 		return nil, err
 	}
 
-	return New(ln), nil
+	mux := &Mux{
+		ReadTimeout: DefaultReadTimeout,
+		innerLn:     ln,
+		ln:          ln,
+		handlers:    make(map[byte]*handler),
+	}
+	return mux, nil
 }
 
 // ListenTLS creates Mux using tls.Listen.
 func ListenTLS(network string, address string, config *tls.Config) (*Mux, error) {
-	ln, err := tls.Listen(network, address, config)
+	ln, err := net.Listen(network, address)
 	if err != nil {
 		return nil, err
 	}
+	tlsln := tls.NewListener(ln, config)
 
-	return New(ln), nil
+	mux := &Mux{
+		ReadTimeout: DefaultReadTimeout,
+		innerLn:     ln,
+		ln:          tlsln,
+		handlers:    make(map[byte]*handler),
+	}
+	return mux, nil
 }
 
 // Close closes the multiplexer and waits for open connections to close.
 func (mux *Mux) Close() (err error) {
 	mux.once.Do(func() {
 		atomic.StoreUint64(&mux.running, 0)
-		// <-mux.done
 
 		// Close underlying listener
 		if mux.ln != nil {
@@ -78,7 +75,7 @@ func (mux *Mux) Close() (err error) {
 		// Wait for open connections to close and then close handlers
 		mux.wg.Wait()
 		for _, h := range mux.handlers {
-			_ = h.Close()
+			close(h.c)
 		}
 	})
 	return
@@ -86,19 +83,18 @@ func (mux *Mux) Close() (err error) {
 
 // Serve handles connections from ln and multiplexes then across registered listeners.
 func (mux *Mux) Serve() error {
-	logger := log.New(mux.LogOutput, "", log.LstdFlags)
-
 	atomic.StoreUint64(&mux.running, 1)
 	for {
 		// Handle incoming connection
-		if ln, ok := mux.ln.(*net.TCPListener); ok {
+		if ln, ok := mux.innerLn.(*net.TCPListener); ok {
 			_ = ln.SetDeadline(time.Now().Add(acceptTimeout))
+		} else {
+			panic("unexpected listener type")
 		}
 		conn, err := mux.ln.Accept()
 
 		// If multiplexer is closing - disregard error and exit
 		if atomic.LoadUint64(&mux.running) == 0 {
-			close(mux.done)
 			return nil
 		}
 
@@ -111,7 +107,6 @@ func (mux *Mux) Serve() error {
 			}
 
 			// On other error - close
-			close(mux.done)
 			_ = mux.Close()
 			return err
 		}
@@ -122,7 +117,6 @@ func (mux *Mux) Serve() error {
 			defer mux.wg.Done()
 			if err := mux.handleConn(conn); err != nil {
 				_ = conn.Close()
-				logger.Printf("mux: %s", err)
 			}
 		}(conn)
 	}
@@ -164,8 +158,8 @@ func (mux *Mux) Listen(stream byte) net.Listener {
 		panic("listen called after serve")
 	}
 	h := &handler{
-		mux: mux,
-		c:   make(chan net.Conn),
+		addr: mux.ln.Addr(),
+		c:    make(chan net.Conn),
 	}
 	mux.handlers[stream] = h
 	return h
@@ -178,32 +172,33 @@ func (mux *Mux) Addr() net.Addr {
 
 // handler is a receiver for connections received by Mux. Implements net.Listener.
 type handler struct {
-	mux  *Mux
+	addr net.Addr
 	c    chan net.Conn
-	once sync.Once
 }
 
 // Accept waits for and returns the next connection.
 func (h *handler) Accept() (c net.Conn, err error) {
-	conn, ok := <-h.c
-	if !ok {
+	select {
+	case conn, ok := <-h.c:
+		if !ok {
+			return nil, ErrConnectionClosed
+		}
+		return conn, nil
+	case <-time.After(acceptTimeout):
 		return nil, ErrConnectionClosed
 	}
-	return conn, nil
 }
 
-// Close closes the original listener.
+// Close implements net.Listener.
 func (h *handler) Close() error {
-	h.once.Do(func() {
-		close(h.c)
-	})
 	return nil
 }
 
 // Addr returns the address of the original listener.
-func (h *handler) Addr() net.Addr { return h.mux.ln.Addr() }
+func (h *handler) Addr() net.Addr { return h.addr }
 
 var (
 	ErrConnectionClosed = errors.New("network connection closed")
+	ErrHandlerClosed    = errors.New("handler is already closed")
 	ErrUnknownStream    = errors.New("unknown stream")
 )

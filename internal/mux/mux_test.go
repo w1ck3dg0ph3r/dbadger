@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"io"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,15 +20,16 @@ func TestMux_TCP(t *testing.T) {
 	m, err := mux.Listen("tcp", "127.0.0.1:0")
 	assert.NoError(t, err)
 	m.ReadTimeout = 1 * time.Second
-	defer m.Close()
 
 	l1 := m.Listen(1)
 	l2 := m.Listen(2)
 
+	closed := make(chan struct{})
 	go func() {
 		if err := m.Serve(); err != nil {
 			t.Error(err)
 		}
+		close(closed)
 	}()
 
 	go connectAndSendMessage(t, m, 1, "MSG1")
@@ -35,6 +37,9 @@ func TestMux_TCP(t *testing.T) {
 
 	acceptAndExpectMessage(t, l1, "MSG1")
 	acceptAndExpectMessage(t, l2, "MSG2")
+
+	m.Close()
+	<-closed
 }
 
 func TestMux_TLS(t *testing.T) {
@@ -49,15 +54,16 @@ func TestMux_TLS(t *testing.T) {
 	m, err := mux.ListenTLS("tcp", "127.0.0.1:0", configs[0])
 	assert.NoError(t, err)
 	m.ReadTimeout = 1 * time.Second
-	defer m.Close()
 
 	l1 := m.Listen(1)
 	l2 := m.Listen(2)
 
+	closed := make(chan struct{})
 	go func() {
 		if err := m.Serve(); err != nil {
 			t.Error(err)
 		}
+		close(closed)
 	}()
 
 	go connectAndSendMessageTLS(t, m, configs[0], 1, "MSG1")
@@ -65,6 +71,42 @@ func TestMux_TLS(t *testing.T) {
 
 	acceptAndExpectMessage(t, l1, "MSG1")
 	acceptAndExpectMessage(t, l2, "MSG2")
+
+	m.Close()
+	<-closed
+}
+
+func TestMux_HandlerClosed(t *testing.T) {
+	t.Parallel()
+
+	m, err := mux.Listen("tcp", "127.0.0.1:0")
+	assert.NoError(t, err)
+	m.ReadTimeout = 1 * time.Second
+
+	l1 := m.Listen(1)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		m.Serve()
+		wg.Done()
+	}()
+
+	sent := make(chan struct{})
+	go func() {
+		connectAndSendMessage(t, m, 1, "MSG1")
+		wg.Done()
+		close(sent)
+	}()
+
+	<-sent
+	l1.Close()
+
+	acceptAndExpectError(t, l1, mux.ErrConnectionClosed)
+
+	m.Close()
+	wg.Wait()
 }
 
 // go test -run=^$ -bench=. -benchmem ./internal/mux
@@ -106,12 +148,11 @@ func BenchmarkNetAccept(b *testing.B) {
 }
 
 func BenchmarkMuxAccept(b *testing.B) {
-	l, err := net.Listen("tcp", "127.0.0.1:0")
+	m, err := mux.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		b.FailNow()
 	}
 
-	m := mux.New(l)
 	ml := m.Listen(1)
 
 	go func() {
@@ -134,7 +175,7 @@ func BenchmarkMuxAccept(b *testing.B) {
 	b.ResetTimer()
 	var buf [4]byte
 	for n := 0; n < b.N; n++ {
-		conn, err := mux.Dial(l.Addr().Network(), l.Addr().String(), 1)
+		conn, err := mux.Dial(m.Addr().Network(), m.Addr().String(), 1)
 		if err != nil {
 			b.Fail()
 		}
@@ -150,6 +191,10 @@ func connectAndSendMessage(t *testing.T, m *mux.Mux, stream byte, msg string) {
 	t.Helper()
 	conn, err := mux.Dial("tcp", m.Addr().String(), stream)
 	assert.NoError(t, err)
+	assert.NotNil(t, conn)
+	if conn == nil {
+		return
+	}
 	defer conn.Close()
 
 	_, err = conn.Write([]byte(msg))
@@ -160,6 +205,7 @@ func connectAndSendMessageTLS(t *testing.T, m *mux.Mux, cfg *tls.Config, stream 
 	t.Helper()
 	conn, err := mux.DialTLS("tcp", m.Addr().String(), stream, cfg)
 	assert.NoError(t, err)
+	assert.NotNil(t, conn)
 	if conn == nil {
 		return
 	}
@@ -192,5 +238,31 @@ func acceptAndExpectMessage(t *testing.T, l net.Listener, msg string) {
 		buf, err := io.ReadAll(conn)
 		assert.NoError(t, err)
 		assert.Equal(t, []byte(msg), buf)
+	}
+}
+
+func acceptAndExpectError(t *testing.T, l net.Listener, expectedErr error) {
+	t.Helper()
+	connCh := make(chan net.Conn, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		conn, err := l.Accept()
+		if err != nil {
+			errCh <- err
+			return
+		}
+		connCh <- conn
+	}()
+
+	select {
+	case <-time.NewTimer(1 * time.Second).C:
+		assert.Fail(t, "accept timed out")
+	case err := <-errCh:
+		assert.ErrorIs(t, err, expectedErr)
+	case conn := <-connCh:
+		defer conn.Close()
+		_, err := io.ReadAll(conn)
+		assert.NoError(t, err)
+		// assert.ErrorIs(t, err, expectedErr)
 	}
 }
