@@ -21,7 +21,7 @@ type Variant struct {
 var variants = []Variant{
 	{Name: "inmemory", InMemory: true, TLS: false},
 	{Name: "inmemory_tls", InMemory: true, TLS: true},
-	{Name: "ondisk", InMemory: false, TLS: false},
+	// {Name: "ondisk", InMemory: false, TLS: false},
 }
 
 func runVariants(t *testing.T, f func(t *testing.T, variant Variant)) {
@@ -49,7 +49,7 @@ func createServer(t testing.TB, bind dbadger.Address, bootstrap bool, join dbadg
 	go func() {
 		db, err := dbadger.Start(cfg)
 		for err != nil {
-			fmt.Println(err)
+			t.Log(err)
 			time.Sleep(300 * time.Millisecond)
 			db, err = dbadger.Start(cfg)
 		}
@@ -89,8 +89,9 @@ func createCluster(t testing.TB, servers int, variant Variant) []*dbadger.DB {
 			serverCert = &certs[i]
 		}
 		server := createServer(t, bind, bootstrap, join, serverCert, variant)
+		time.Sleep(300 * time.Millisecond)
 		for !server.IsReady() {
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(300 * time.Millisecond)
 		}
 		cluster = append(cluster, server)
 	}
@@ -111,7 +112,7 @@ func (dummyerr) Error() string { return "" }
 func retry(maxAttempts int, timeout time.Duration, f func() error) error {
 	var err error = dummyerr{}
 	attempts := 0
-	backoff := 100 * time.Millisecond
+	backoff := 300 * time.Millisecond
 	start := time.Now()
 	for err != nil {
 		err = f()

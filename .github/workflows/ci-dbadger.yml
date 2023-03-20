@@ -48,12 +48,11 @@ jobs:
         go build -v ./cmd/...
 
     - name: Test
-      run: make test
+      run: make cover
 
     - name: Send coverage
       env:
         COVERALLS_TOKEN: ${{ secrets.COVERALLS_TOKEN }}
       run: |
-        make cover
         go install github.com/mattn/goveralls@latest
         goveralls -coverprofile=coverage.txt -repotoken=$COVERALLS_TOKEN

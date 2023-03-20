@@ -27,11 +27,11 @@ lint:
 
 .PHONY: test
 test:
-	go test -v -race -count=1 ./...
+	go test -v -race -timeout=15m ./...
 
 .PHONY: cover
 cover:
-	go test -coverpkg=github.com/w1ck3dg0ph3r/dbadger/... -covermode=set -coverprofile=coverage.txt ./...
+	go test -race -coverpkg=github.com/w1ck3dg0ph3r/dbadger/... -covermode=atomic -coverprofile=coverage.txt -timeout=15m ./...
 	go tool cover -html=coverage.txt -o coverage.html
 	go tool cover -func=coverage.txt
 

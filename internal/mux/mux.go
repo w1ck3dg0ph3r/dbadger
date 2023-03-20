@@ -148,7 +148,11 @@ func (mux *Mux) handleConn(conn net.Conn) error {
 	}
 
 	// Hand off connection to handler
-	h.c <- conn
+	select {
+	case h.c <- conn:
+	case <-time.After(acceptTimeout):
+		return ErrConnectionTimeout
+	}
 	return nil
 }
 
@@ -185,7 +189,7 @@ func (h *handler) Accept() (c net.Conn, err error) {
 		}
 		return conn, nil
 	case <-time.After(acceptTimeout):
-		return nil, ErrConnectionClosed
+		return nil, ErrConnectionTimeout
 	}
 }
 
@@ -198,7 +202,8 @@ func (h *handler) Close() error {
 func (h *handler) Addr() net.Addr { return h.addr }
 
 var (
-	ErrConnectionClosed = errors.New("network connection closed")
-	ErrHandlerClosed    = errors.New("handler is already closed")
-	ErrUnknownStream    = errors.New("unknown stream")
+	ErrConnectionClosed  = errors.New("network connection closed")
+	ErrConnectionTimeout = errors.New("network connection timed out")
+	ErrHandlerClosed     = errors.New("handler is already closed")
+	ErrUnknownStream     = errors.New("unknown stream")
 )
