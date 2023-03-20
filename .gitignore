@@ -3,3 +3,4 @@
 /.tls/
 /.prof/
 /coverage.txt
+/coverage.html

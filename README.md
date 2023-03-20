@@ -3,6 +3,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/w1ck3dg0ph3r/dbadger.svg)](https://pkg.go.dev/github.com/w1ck3dg0ph3r/dbadger)
 [![Go Report Card](https://goreportcard.com/badge/github.com/w1ck3dg0ph3r/dbadger)](https://goreportcard.com/report/github.com/w1ck3dg0ph3r/dbadger)
 [![ci-dbadger](https://github.com/w1ck3dg0ph3r/dbadger/actions/workflows/ci-dbadger.yml/badge.svg)](https://github.com/w1ck3dg0ph3r/dbadger/actions/workflows/ci-dbadger.yml)
+[![Coverage Status](https://coveralls.io/repos/github/w1ck3dg0ph3r/dbadger/badge.svg?branch=main)](https://coveralls.io/github/w1ck3dg0ph3r/dbadger?branch=main)
 
 <img src=".README/dbadger.png" alt="Logo" width="167">
 
