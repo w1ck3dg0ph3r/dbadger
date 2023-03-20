@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 
 	bc "github.com/w1ck3dg0ph3r/dbadger/internal/bytesconv"
 )
@@ -20,6 +21,7 @@ const (
 type StableStore struct {
 	config *StableStoreConfig
 
+	mut      sync.RWMutex
 	values   map[string]string
 	filename string
 	file     *os.File
@@ -70,6 +72,8 @@ func (c *StableStoreConfig) WithInMemory(inMemory bool) *StableStoreConfig {
 }
 
 func (s *StableStore) Set(key []byte, val []byte) error {
+	s.mut.Lock()
+	defer s.mut.Unlock()
 	s.values[bc.ToString(key)] = bc.ToString(val)
 	if err := s.saveConfig(); err != nil {
 		return err
@@ -79,6 +83,8 @@ func (s *StableStore) Set(key []byte, val []byte) error {
 
 // Get returns the value for key, or an empty byte slice if key was not found.
 func (s *StableStore) Get(key []byte) ([]byte, error) {
+	s.mut.RLock()
+	defer s.mut.RUnlock()
 	if val, ok := s.values[bc.ToString(key)]; ok {
 		return bc.ToBytes(val), nil
 	}
@@ -86,6 +92,8 @@ func (s *StableStore) Get(key []byte) ([]byte, error) {
 }
 
 func (s *StableStore) SetUint64(key []byte, val uint64) error {
+	s.mut.Lock()
+	defer s.mut.Unlock()
 	s.values[bc.ToString(key)] = strconv.FormatUint(val, 10)
 	if err := s.saveConfig(); err != nil {
 		return err
@@ -95,6 +103,8 @@ func (s *StableStore) SetUint64(key []byte, val uint64) error {
 
 // GetUint64 returns the uint64 value for key, or 0 if key was not found.
 func (s *StableStore) GetUint64(key []byte) (uint64, error) {
+	s.mut.RLock()
+	defer s.mut.RUnlock()
 	if val, ok := s.values[bc.ToString(key)]; ok {
 		val, err := strconv.ParseUint(val, 10, 64)
 		if err != nil {
@@ -112,6 +122,8 @@ func (s *StableStore) Close() {
 }
 
 func (s *StableStore) PrintConfig(out io.Writer) {
+	s.mut.RLock()
+	defer s.mut.RUnlock()
 	for k, v := range s.values {
 		fmt.Fprintf(out, "\"%s\" = \"%s\"\n", k, v)
 	}
