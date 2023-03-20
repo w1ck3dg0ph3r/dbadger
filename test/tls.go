@@ -99,25 +99,18 @@ func GenerateTestTLSConfigs(serverNames []string) []*tls.Config {
 	return tlsConfigs
 }
 
-func GenerateTestCertificates(destDir string, serverNames []string) {
+type TestCert struct {
+	CA   []byte
+	Cert []byte
+	Key  []byte
+}
+
+func GenerateTestCertificates(serverNames []string) (certs []TestCert) {
 	const bitLength = 2048
 	const expiration = 365 * 24 * time.Hour
 
-	_ = os.MkdirAll(destDir, fs.ModeDir|fs.ModePerm)
-
 	// Generate CA key
 	capk, _ := rsa.GenerateKey(rand.Reader, bitLength)
-	capkpem := pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(capk),
-	})
-	_ = os.WriteFile(filepath.Join(destDir, "ca.key.pem"), capkpem, 0o600)
-
-	capubpem := pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PUBLIC KEY",
-		Bytes: x509.MarshalPKCS1PublicKey(&capk.PublicKey),
-	})
-	_ = os.WriteFile(filepath.Join(destDir, "ca.pub.pem"), capubpem, 0o666)
 
 	// Create CA certificate
 	cacerttpl := &x509.Certificate{
@@ -141,7 +134,6 @@ func GenerateTestCertificates(destDir string, serverNames []string) {
 		Type:  "CERTIFICATE",
 		Bytes: cacert,
 	})
-	_ = os.WriteFile(filepath.Join(destDir, "ca.crt"), cacertpem, 0o666)
 
 	parent, err := x509.ParseCertificate(cacert)
 	if err != nil {
@@ -156,13 +148,6 @@ func GenerateTestCertificates(destDir string, serverNames []string) {
 			Type:  "RSA PRIVATE KEY",
 			Bytes: x509.MarshalPKCS1PrivateKey(pk),
 		})
-		_ = os.WriteFile(filepath.Join(destDir, serverName+".key.pem"), pkpem, 0o600)
-
-		pubpem := pem.EncodeToMemory(&pem.Block{
-			Type:  "RSA PUBLIC KEY",
-			Bytes: x509.MarshalPKCS1PublicKey(&pk.PublicKey),
-		})
-		_ = os.WriteFile(filepath.Join(destDir, serverName+".pub.pem"), pubpem, 0o666)
 
 		certtpl := &x509.Certificate{
 			SerialNumber: big.NewInt(int64(i)),
@@ -170,11 +155,17 @@ func GenerateTestCertificates(destDir string, serverNames []string) {
 				CommonName: serverName,
 			},
 			DNSNames:    []string{serverName},
-			IPAddresses: []net.IP{net.IPv4(127, 0, 0, 1)},
 			KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageDataEncipherment,
 			ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
 			NotAfter:    time.Now().Add(expiration),
 		}
+
+		host, _, _ := net.SplitHostPort(serverName)
+		serverIP := net.ParseIP(host)
+		if serverIP != nil {
+			certtpl.IPAddresses = []net.IP{serverIP}
+		}
+
 		cert, err := x509.CreateCertificate(rand.Reader, certtpl, parent, &pk.PublicKey, capk)
 		if err != nil {
 			fmt.Println(err)
@@ -184,7 +175,11 @@ func GenerateTestCertificates(destDir string, serverNames []string) {
 			Type:  "CERTIFICATE",
 			Bytes: cert,
 		})
-		_ = os.WriteFile(filepath.Join(destDir, serverName+".crt"), certpem, 0o666)
+		certs = append(certs, TestCert{
+			CA:   cacertpem,
+			Cert: certpem,
+			Key:  pkpem,
+		})
 
 		child, err := x509.ParseCertificate(cert)
 		if err != nil {
@@ -198,5 +193,19 @@ func GenerateTestCertificates(destDir string, serverNames []string) {
 		if err != nil {
 			fmt.Println(err)
 		}
+	}
+	return
+}
+
+func GenerateTestCertificateFiles(destDir string, serverNames []string) {
+	certs := GenerateTestCertificates(serverNames)
+	if len(certs) != len(serverNames) {
+		return
+	}
+	_ = os.MkdirAll(destDir, fs.ModeDir|fs.ModePerm)
+	_ = os.WriteFile(filepath.Join(destDir, "ca.crt"), certs[0].CA, 0o600)
+	for i := range certs {
+		_ = os.WriteFile(filepath.Join(destDir, fmt.Sprintf("node%d.crt", i+1)), certs[i].Cert, 0o600)
+		_ = os.WriteFile(filepath.Join(destDir, fmt.Sprintf("node%d.pem", i+1)), certs[i].Key, 0o600)
 	}
 }
