@@ -85,9 +85,9 @@ func mapError(err error) error {
 		switch st.Code() {
 		case codes.Unavailable,
 			codes.Canceled:
-			return fmt.Errorf("%w: %v", ErrUnavailable, err)
+			return fmt.Errorf("%w: %v", ErrUnavailable, err) //nolint:errorlint // We want to wrap the first error only.
 		default:
-			return fmt.Errorf("%w: %v", ErrInternal, err)
+			return fmt.Errorf("%w: %v", ErrInternal, err) //nolint:errorlint // We want to wrap the first error only.
 		}
 	}
 	return err
