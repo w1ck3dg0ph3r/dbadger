@@ -9,17 +9,18 @@
 DBadger is a distributed embeddable key-value database based on [BadgerDB](https://github.com/dgraph-io/badger) persistent storage and [Raft](https://github.com/hashicorp/raft) consensus algorithm.
 
 **DBadger:**
-- uses BadgerDB as both data store and log store and simple fsync-ed file for stable store.
-- uses GRPC for inter-node communication and redirects requests to the leader node when neccessary.
-- reuses single port for both Raft and GRPC by multiplexing TCP streams.
-- supports communication over TLS between nodes.
+- Uses BadgerDB as both data store and log store and simple fsync-ed file for stable store.
+- Uses GRPC for inter-node communication and redirects requests to the leader node when neccessary.
+- Reuses single port for both Raft and GRPC by multiplexing TCP streams.
+- Supports communication over TLS between nodes.
 
 
 
 
 ## Rationale
 
-The idea was to make an easier to embed KV store to replace etcd in simple use cases.
+The purpose of this package is to make a simple distributed key-value store similar to [etcd](https://github.com/etcd-io/etcd) that is designed to be embeded into a program.
+This is mostly expiremental at this stage, so no API stability guarantees until v1.
 
 
 
