@@ -13,155 +13,168 @@ import (
 )
 
 func TestCluster_HappyTimes(t *testing.T) {
-	cluster := createCluster(t, 3)
+	runVariants(t, func(t *testing.T, variant Variant) {
+		cluster := createCluster(t, 3, variant)
 
-	const goroutines = 4
-	const count = 2500
+		const goroutines = 4
+		const count = 2500
 
-	keys, values := generateKeyValues(goroutines * count)
+		keys, values := generateKeyValues(goroutines * count)
 
-	wg := sync.WaitGroup{}
-	wg.Add(goroutines)
-	for g := 0; g < goroutines; g++ {
-		g := g
-		go func() {
-			defer wg.Done()
-			for i := g * count; i < g*count+count; i++ {
-				err := retry(10, 3*time.Second, func() error {
-					return cluster[i%len(cluster)].Set(context.Background(), keys[i], values[i])
-				})
-				assert.NoError(t, err)
-			}
-		}()
-	}
-	wg.Wait()
+		wg := sync.WaitGroup{}
+		wg.Add(goroutines)
+		for g := 0; g < goroutines; g++ {
+			g := g
+			go func() {
+				defer wg.Done()
+				for i := g * count; i < g*count+count; i++ {
+					err := retry(10, 3*time.Second, func() error {
+						return cluster[i%len(cluster)].Set(context.Background(), keys[i], values[i])
+					})
+					assert.NoError(t, err)
+				}
+			}()
+		}
+		wg.Wait()
 
-	wg = sync.WaitGroup{}
-	wg.Add(goroutines)
-	for g := 0; g < goroutines; g++ {
-		g := g
-		go func() {
-			defer wg.Done()
-			for i := g * count; i < g*count+count; i++ {
-				var value []byte
-				err := retry(10, 3*time.Second, func() error {
-					var err error
-					value, err = cluster[i%len(cluster)].Get(context.Background(), keys[i], dbadger.LocalPreference)
-					return err
-				})
-				assert.NoError(t, err)
-				assert.Equal(t, values[i], value, "values do not match")
-			}
-		}()
-	}
-	wg.Wait()
+		wg = sync.WaitGroup{}
+		wg.Add(goroutines)
+		for g := 0; g < goroutines; g++ {
+			g := g
+			go func() {
+				defer wg.Done()
+				for i := g * count; i < g*count+count; i++ {
+					var value []byte
+					err := retry(10, 3*time.Second, func() error {
+						var err error
+						value, err = cluster[i%len(cluster)].Get(context.Background(), keys[i], dbadger.LocalPreference)
+						return err
+					})
+					assert.NoError(t, err)
+					assert.Equal(t, values[i], value, "values do not match")
+				}
+			}()
+		}
+		wg.Wait()
 
-	stopCluster(t, cluster)
+		stopCluster(t, cluster)
+	})
 }
 
 func TestCluster_ReplicationHappens(t *testing.T) {
-	cluster := createCluster(t, 3)
+	runVariants(t, func(t *testing.T, variant Variant) {
+		cluster := createCluster(t, 3, variant)
 
-	leader := cluster[0]
-	follower := cluster[2]
+		leader := cluster[0]
+		follower := cluster[2]
 
-	t.Run("with leader read preference", func(t *testing.T) {
-		key := []byte("strong_key")
-		value := []byte("strong_value")
+		t.Run("with leader read preference", func(t *testing.T) {
+			key := []byte("strong_key")
+			value := []byte("strong_value")
 
-		err := leader.Set(context.Background(), key, value)
-		assert.NoError(t, err)
+			err := leader.Set(context.Background(), key, value)
+			assert.NoError(t, err)
 
-		res, err := follower.Get(context.Background(), key, dbadger.LeaderPreference)
-		assert.NoError(t, err)
-		assert.Equal(t, value, res)
+			var res []byte
+			err = retry(10, 3*time.Second, func() error {
+				var err error
+				res, err = follower.Get(context.Background(), key, dbadger.LeaderPreference)
+				return err
+			})
+			assert.NoError(t, err)
+			assert.Equal(t, value, res)
+		})
+
+		t.Run("with self read preference", func(t *testing.T) {
+			key := []byte("eventual_key")
+			value := []byte("eventual_value")
+
+			err := leader.Set(context.Background(), key, value)
+			assert.NoError(t, err)
+
+			var res []byte
+			assert.NoError(t, retry(10, 3*time.Second, func() error {
+				var err error
+				res, err = follower.Get(context.Background(), key, dbadger.LocalPreference)
+				return err
+			}))
+			assert.Equal(t, value, res)
+		})
+
+		stopCluster(t, cluster)
 	})
-
-	t.Run("with self read preference", func(t *testing.T) {
-		key := []byte("eventual_key")
-		value := []byte("eventual_value")
-
-		err := leader.Set(context.Background(), key, value)
-		assert.NoError(t, err)
-
-		var res []byte
-		assert.NoError(t, retry(10, 3*time.Second, func() error {
-			var err error
-			res, err = follower.Get(context.Background(), key, dbadger.LocalPreference)
-			return err
-		}))
-		assert.Equal(t, value, res)
-	})
-
-	stopCluster(t, cluster)
 }
 
 func TestCluster_NewLeaderIsElected(t *testing.T) {
-	cluster := createCluster(t, 3)
+	runVariants(t, func(t *testing.T, variant Variant) {
+		cluster := createCluster(t, 3, variant)
 
-	assert.True(t, cluster[0].IsReady())
-	assert.True(t, cluster[0].IsLeader())
+		assert.True(t, cluster[0].IsReady())
+		assert.True(t, cluster[0].IsLeader())
 
-	assert.NoError(t, cluster[0].Stop())
+		assert.NoError(t, cluster[0].Stop())
 
-	newLeader := make(chan int)
-	go func() {
-		for {
-			leader := cluster[1].Leader()
-			if leader == "" || leader == cluster[0].Addr() {
-				continue
-			}
-			for i := 0; i < 3; i++ {
-				if leader == cluster[i].Addr() {
-					newLeader <- i
+		newLeader := make(chan int)
+		go func() {
+			for {
+				leader := cluster[1].Leader()
+				if leader == "" || leader == cluster[0].Addr() {
+					continue
+				}
+				for i := 0; i < 3; i++ {
+					if leader == cluster[i].Addr() {
+						newLeader <- i
+					}
 				}
 			}
+		}()
+
+		select {
+		case leader := <-newLeader:
+			assert.NotEqual(t, 0, leader)
+		case <-time.After(5 * time.Second):
+			t.Error("leader election timeout")
 		}
-	}()
 
-	select {
-	case leader := <-newLeader:
-		assert.NotEqual(t, 0, leader)
-	case <-time.After(5 * time.Second):
-		t.Error("leader election timeout")
-	}
-
-	stopCluster(t, cluster)
+		stopCluster(t, cluster)
+	})
 }
 
 func TestCluster_BackupRestore(t *testing.T) {
-	cluster := createCluster(t, 3)
-	keys, values := generateKeyValues(100)
+	runVariants(t, func(t *testing.T, variant Variant) {
+		cluster := createCluster(t, 3, variant)
+		keys, values := generateKeyValues(100)
 
-	// Write data
-	assert.NoError(t, cluster[0].SetMany(context.Background(), keys, values))
+		// Write data
+		assert.NoError(t, cluster[0].SetMany(context.Background(), keys, values))
 
-	// Wait untill replication is done
-	assert.NoError(t, retry(10, 3*time.Second, func() error {
-		_, err := cluster[2].Get(context.Background(), keys[len(keys)-1], dbadger.LocalPreference)
-		return err
-	}))
+		// Wait untill replication is done
+		assert.NoError(t, retry(10, 3*time.Second, func() error {
+			_, err := cluster[2].Get(context.Background(), keys[len(keys)-1], dbadger.LocalPreference)
+			return err
+		}))
 
-	// Snapshot leader node
-	snapshotId, err := cluster[0].Snapshot()
-	assert.NoError(t, err)
+		// Snapshot leader node
+		snapshotId, err := cluster[0].Snapshot()
+		assert.NoError(t, err)
 
-	// Delete all keys
-	assert.NoError(t, cluster[0].DeleteAll(context.Background()))
+		// Delete all keys
+		assert.NoError(t, cluster[0].DeleteAll(context.Background()))
 
-	// Restore snapshot
-	assert.NoError(t, cluster[0].Restore(snapshotId))
+		// Restore snapshot
+		assert.NoError(t, cluster[0].Restore(snapshotId))
 
-	// Check data
-	res, err := cluster[0].GetMany(context.Background(), keys, dbadger.LeaderPreference)
-	assert.NoError(t, err)
-	assert.Equal(t, values, res)
+		// Check data
+		res, err := cluster[0].GetMany(context.Background(), keys, dbadger.LeaderPreference)
+		assert.NoError(t, err)
+		assert.Equal(t, values, res)
 
-	stopCluster(t, cluster)
+		stopCluster(t, cluster)
+	})
 }
 
 func BenchmarkWrite(b *testing.B) {
-	cluster := createCluster(b, 3)
+	cluster := createCluster(b, 3, Variant{InMemory: true})
 	server := cluster[0]
 	keys, values := generateKeyValues(b.N)
 
@@ -178,7 +191,7 @@ func BenchmarkWrite(b *testing.B) {
 }
 
 func BenchmarkRead(b *testing.B) {
-	cluster := createCluster(b, 3)
+	cluster := createCluster(b, 3, Variant{InMemory: true})
 	server := cluster[0]
 	keys, values := generateKeyValues(b.N)
 

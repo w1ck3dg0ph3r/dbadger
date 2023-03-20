@@ -31,7 +31,9 @@ test:
 
 .PHONY: cover
 cover:
-	go test -race -coverpkg=github.com/w1ck3dg0ph3r/dbadger/... -covermode=atomic -coverprofile=coverage.txt ./...
+	go test -coverpkg=github.com/w1ck3dg0ph3r/dbadger/... -covermode=set -coverprofile=coverage.txt ./...
+	go tool cover -html=coverage.txt -o coverage.html
+	go tool cover -func=coverage.txt
 
 .PHONY: profile
 profile:
