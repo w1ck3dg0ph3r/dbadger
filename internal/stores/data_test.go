@@ -17,8 +17,6 @@ import (
 func TestDataStore_SetGet(t *testing.T) {
 	t.Parallel()
 
-	ds := createDataStore(t)
-
 	cases := []struct {
 		name  string
 		key   []byte
@@ -36,8 +34,9 @@ func TestDataStore_SetGet(t *testing.T) {
 
 	for _, tc := range cases {
 		tc := tc
-		_ = ds.db.DropAll()
 		t.Run(tc.name, func(t *testing.T) {
+			ds := createDataStore(t)
+			defer ds.Close()
 			if tc.set {
 				if tc.panic {
 					assert.Panics(t, func() {
@@ -71,8 +70,6 @@ func TestDataStore_SetGet(t *testing.T) {
 func TestDataStore_SetGetMany(t *testing.T) {
 	t.Parallel()
 
-	ds := createDataStore(t)
-
 	keys := [][]byte{
 		bc.ToBytes("akey1"),
 		bc.ToBytes("bkey2"),
@@ -102,8 +99,9 @@ func TestDataStore_SetGetMany(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		_ = ds.db.DropAll()
 		t.Run(tc.name, func(t *testing.T) {
+			ds := createDataStore(t)
+			defer ds.Close()
 			if tc.set {
 				if tc.panic {
 					assert.Panics(t, func() {
@@ -138,6 +136,7 @@ func TestDataStore_SetManyOverBatchLimit(t *testing.T) {
 	t.Parallel()
 
 	ds := createDataStore(t)
+	defer ds.Close()
 	maxSize := ds.db.MaxBatchSize()
 	count := 10
 	valueSize := maxSize/int64(count) + 1
@@ -165,6 +164,7 @@ func TestDataStore_GetPrefix(t *testing.T) {
 	t.Parallel()
 
 	ds := createDataStore(t)
+	defer ds.Close()
 
 	keys := [][]byte{
 		bc.ToBytes("prefix1_key1"),
@@ -219,6 +219,7 @@ func TestDataStore_GetRange(t *testing.T) {
 	t.Parallel()
 
 	ds := createDataStore(t)
+	defer ds.Close()
 
 	var keys [][]byte
 	var values [][]byte
@@ -271,8 +272,6 @@ func TestDataStore_GetRange(t *testing.T) {
 func TestDataStore_Delete(t *testing.T) {
 	t.Parallel()
 
-	ds := createDataStore(t)
-
 	keys := [][]byte{
 		bc.ToBytes("key1"),
 		bc.ToBytes("key2"),
@@ -295,8 +294,9 @@ func TestDataStore_Delete(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		_ = ds.db.DropAll()
 		t.Run(tc.name, func(t *testing.T) {
+			ds := createDataStore(t)
+			defer ds.Close()
 			_ = ds.SetMany(keys, keys)
 			if tc.panics {
 				assert.Panics(t, func() {
@@ -319,8 +319,6 @@ func TestDataStore_Delete(t *testing.T) {
 
 func TestDataStore_DeleteMany(t *testing.T) {
 	t.Parallel()
-
-	ds := createDataStore(t)
 
 	keys := [][]byte{
 		bc.ToBytes("key1"),
@@ -345,8 +343,9 @@ func TestDataStore_DeleteMany(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		_ = ds.db.DropAll()
 		t.Run(tc.name, func(t *testing.T) {
+			ds := createDataStore(t)
+			defer ds.Close()
 			_ = ds.SetMany(keys, keys)
 			if tc.panics {
 				assert.Panics(t, func() {
@@ -369,8 +368,6 @@ func TestDataStore_DeleteMany(t *testing.T) {
 
 func TestDataStore_DeletePrefix(t *testing.T) {
 	t.Parallel()
-
-	ds := createDataStore(t)
 
 	keys := [][]byte{
 		bc.ToBytes("prefix1_key1"),
@@ -395,8 +392,9 @@ func TestDataStore_DeletePrefix(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		_ = ds.db.DropAll()
 		t.Run(tc.name, func(t *testing.T) {
+			ds := createDataStore(t)
+			defer ds.Close()
 			_ = ds.SetMany(keys, keys)
 			if tc.panics {
 				assert.Panics(t, func() {
@@ -419,8 +417,6 @@ func TestDataStore_DeletePrefix(t *testing.T) {
 
 func TestDataStore_DeleteRange(t *testing.T) {
 	t.Parallel()
-
-	ds := createDataStore(t)
 
 	var keys [][]byte
 	var values [][]byte
@@ -446,9 +442,10 @@ func TestDataStore_DeleteRange(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		_ = ds.db.DropAll()
-		_ = ds.SetMany(keys, values)
 		t.Run(tc.name, func(t *testing.T) {
+			ds := createDataStore(t)
+			defer ds.Close()
+			_ = ds.SetMany(keys, values)
 			var deleted *rpc.ResultDeleteRange
 			if tc.panics {
 				assert.Panics(t, func() {
@@ -477,6 +474,7 @@ func TestDataStore_DeleteAll(t *testing.T) {
 	t.Parallel()
 
 	ds := createDataStore(t)
+	defer ds.Close()
 
 	keys := [][]byte{
 		bc.ToBytes("key1"),
@@ -499,6 +497,7 @@ func TestDataStore_Snapshots(t *testing.T) {
 	t.Parallel()
 
 	ds := createDataStore(t)
+	defer ds.Close()
 
 	var keys [][]byte
 	var values [][]byte

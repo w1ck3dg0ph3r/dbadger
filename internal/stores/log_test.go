@@ -12,14 +12,6 @@ import (
 func TestLogStore_FirstIndex(t *testing.T) {
 	t.Parallel()
 
-	ls := createLogStore(t)
-
-	storeIndexes := func(is []uint64) {
-		for _, i := range is {
-			_ = ls.StoreLog(&raft.Log{Index: i})
-		}
-	}
-
 	cases := []struct {
 		name    string
 		indexes []uint64
@@ -32,9 +24,12 @@ func TestLogStore_FirstIndex(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		_ = ls.DeleteAll()
 		t.Run(tc.name, func(t *testing.T) {
-			storeIndexes(tc.indexes)
+			ls := createLogStore(t)
+			defer ls.Close()
+			for _, i := range tc.indexes {
+				_ = ls.StoreLog(&raft.Log{Index: i})
+			}
 			last, err := ls.FirstIndex()
 			assert.NoError(t, err)
 			assert.Equal(t, tc.last, last)
@@ -44,14 +39,6 @@ func TestLogStore_FirstIndex(t *testing.T) {
 
 func TestLogStore_LastIndex(t *testing.T) {
 	t.Parallel()
-
-	ls := createLogStore(t)
-
-	storeIndexes := func(is []uint64) {
-		for _, i := range is {
-			_ = ls.StoreLog(&raft.Log{Index: i})
-		}
-	}
 
 	cases := []struct {
 		name    string
@@ -65,9 +52,12 @@ func TestLogStore_LastIndex(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		_ = ls.DeleteAll()
 		t.Run(tc.name, func(t *testing.T) {
-			storeIndexes(tc.indexes)
+			ls := createLogStore(t)
+			defer ls.Close()
+			for _, i := range tc.indexes {
+				_ = ls.StoreLog(&raft.Log{Index: i})
+			}
 			last, err := ls.LastIndex()
 			assert.NoError(t, err)
 			assert.Equal(t, tc.last, last)
@@ -80,6 +70,7 @@ func TestLogStore_SetGetLog(t *testing.T) {
 
 	t.Run("non existing", func(t *testing.T) {
 		ls := createLogStore(t)
+		defer ls.Close()
 		var l raft.Log
 		err := ls.GetLog(1, &l)
 		assert.ErrorIs(t, err, raft.ErrLogNotFound)
@@ -87,6 +78,7 @@ func TestLogStore_SetGetLog(t *testing.T) {
 
 	t.Run("existing", func(t *testing.T) {
 		ls := createLogStore(t)
+		defer ls.Close()
 		l := &raft.Log{
 			Index:      uint64(rand.Int()),
 			Term:       uint64(rand.Int()),
@@ -107,6 +99,7 @@ func TestLogStore_SetGetLog(t *testing.T) {
 
 	t.Run("zero time", func(t *testing.T) {
 		ls := createLogStore(t)
+		defer ls.Close()
 		l := &raft.Log{
 			AppendedAt: time.Time{},
 		}
@@ -125,6 +118,7 @@ func TestLogStore_StoreLogs(t *testing.T) {
 	t.Parallel()
 
 	ls := createLogStore(t)
+	defer ls.Close()
 	var logs []*raft.Log
 	dataSize := ls.db.MaxBatchSize() / 100
 	for i := 0; i < 100; i++ {
@@ -151,6 +145,8 @@ func TestLogStore_DeleteRange(t *testing.T) {
 	t.Parallel()
 
 	ls := createLogStore(t)
+	defer ls.Close()
+
 	var logs []*raft.Log
 	for i := 1; i <= 10; i++ {
 		logs = append(logs, &raft.Log{
