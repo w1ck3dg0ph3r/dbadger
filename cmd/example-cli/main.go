@@ -28,7 +28,7 @@ func main() {
 			buf.WriteString("\nSupported commands:\n")
 			buf.WriteString("\tset {key} {value} // Set a key-value pair\n")
 			buf.WriteString("\tdel {key} // Remove a key\n")
-			buf.WriteString("\tsetmany // Set 1000 test key-value pairs\n")
+			buf.WriteString("\ttestset // Set 1000 test key-value pairs\n")
 			buf.WriteString("\tdrop // Remove all keys\n")
 			buf.WriteString("\tsnapshot // Take a snapshot\n")
 			buf.WriteString("\trestore {snapshot_id} // Restore from a snapshot\n")
