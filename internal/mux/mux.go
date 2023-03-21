@@ -12,7 +12,8 @@ import (
 
 // Mux is a multiplexer for a net.Listener.
 type Mux struct {
-	ReadTimeout time.Duration
+	ReadTimeout   time.Duration
+	AcceptTimeout time.Duration
 
 	innerLn net.Listener
 	ln      net.Listener
@@ -25,8 +26,10 @@ type Mux struct {
 }
 
 const (
-	DefaultReadTimeout = 30 * time.Second
-	acceptTimeout      = 1 * time.Second
+	DefaultReadTimeout   = 5 * time.Second
+	DefaultAcceptTimeout = 5 * time.Second
+
+	acceptBackoff = 5 * time.Millisecond
 )
 
 // Listen creates Mux using net.Listen.
@@ -37,10 +40,11 @@ func Listen(network string, address string) (*Mux, error) {
 	}
 
 	mux := &Mux{
-		ReadTimeout: DefaultReadTimeout,
-		innerLn:     ln,
-		ln:          ln,
-		handlers:    make(map[byte]*handler),
+		ReadTimeout:   DefaultReadTimeout,
+		AcceptTimeout: DefaultAcceptTimeout,
+		innerLn:       ln,
+		ln:            ln,
+		handlers:      make(map[byte]*handler),
 	}
 	return mux, nil
 }
@@ -54,10 +58,11 @@ func ListenTLS(network string, address string, config *tls.Config) (*Mux, error)
 	tlsln := tls.NewListener(ln, config)
 
 	mux := &Mux{
-		ReadTimeout: DefaultReadTimeout,
-		innerLn:     ln,
-		ln:          tlsln,
-		handlers:    make(map[byte]*handler),
+		ReadTimeout:   DefaultReadTimeout,
+		AcceptTimeout: DefaultAcceptTimeout,
+		innerLn:       ln,
+		ln:            tlsln,
+		handlers:      make(map[byte]*handler),
 	}
 	return mux, nil
 }
@@ -87,7 +92,7 @@ func (mux *Mux) Serve() error {
 	for {
 		// Handle incoming connection
 		if ln, ok := mux.innerLn.(*net.TCPListener); ok {
-			_ = ln.SetDeadline(time.Now().Add(acceptTimeout))
+			_ = ln.SetDeadline(time.Now().Add(mux.AcceptTimeout))
 		} else {
 			panic("unexpected listener type")
 		}
@@ -102,6 +107,7 @@ func (mux *Mux) Serve() error {
 			// On timeout - continue listening
 			if err, ok := err.(net.Error); ok { //nolint:errorlint // We know the error is not wraped
 				if err.Timeout() {
+					time.Sleep(acceptBackoff)
 					continue
 				}
 			}
@@ -131,8 +137,8 @@ func (mux *Mux) handleConn(conn net.Conn) error {
 
 	// Read the first byte from connection to determine handler
 	var typ [1]byte
-	_, err := conn.Read(typ[:])
-	if err != nil {
+	n, err := conn.Read(typ[:])
+	if err != nil || n != 1 {
 		return fmt.Errorf("read stream byte: %w", err)
 	}
 
@@ -148,11 +154,8 @@ func (mux *Mux) handleConn(conn net.Conn) error {
 	}
 
 	// Hand off connection to handler
-	select {
-	case h.c <- conn:
-	case <-time.After(acceptTimeout):
-		return ErrConnectionTimeout
-	}
+	h.c <- conn
+
 	return nil
 }
 
@@ -162,8 +165,9 @@ func (mux *Mux) Listen(stream byte) net.Listener {
 		panic("listen called after serve")
 	}
 	h := &handler{
-		addr: mux.ln.Addr(),
-		c:    make(chan net.Conn),
+		addr:          mux.ln.Addr(),
+		c:             make(chan net.Conn),
+		acceptTimeout: mux.AcceptTimeout,
 	}
 	mux.handlers[stream] = h
 	return h
@@ -178,17 +182,21 @@ func (mux *Mux) Addr() net.Addr {
 type handler struct {
 	addr net.Addr
 	c    chan net.Conn
+
+	acceptTimeout time.Duration
 }
 
 // Accept waits for and returns the next connection.
 func (h *handler) Accept() (c net.Conn, err error) {
+	timeout := time.NewTimer(h.acceptTimeout)
+	defer timeout.Stop()
 	select {
 	case conn, ok := <-h.c:
 		if !ok {
 			return nil, ErrConnectionClosed
 		}
 		return conn, nil
-	case <-time.After(acceptTimeout):
+	case <-timeout.C:
 		return nil, ErrConnectionTimeout
 	}
 }
