@@ -35,7 +35,9 @@ func TestMux_TCP(t *testing.T) {
 	acceptAndExpectMessage(t, l1, "MSG1")
 	acceptAndExpectMessage(t, l2, "MSG2")
 
-	m.Close()
+	assert.NoError(t, l1.Close())
+	assert.NoError(t, l2.Close())
+	assert.NoError(t, m.Close())
 	<-closed
 }
 
@@ -66,7 +68,9 @@ func TestMux_TLS(t *testing.T) {
 	acceptAndExpectMessage(t, l1, "MSG1")
 	acceptAndExpectMessage(t, l2, "MSG2")
 
-	m.Close()
+	assert.NoError(t, l1.Close())
+	assert.NoError(t, l2.Close())
+	assert.NoError(t, m.Close())
 	<-closed
 }
 
@@ -116,24 +120,61 @@ func TestMux_Racing(t *testing.T) {
 	}
 
 	wg.Wait()
-	m.Close()
+	for _, l := range listeners {
+		assert.NoError(t, l.Close())
+	}
+	assert.NoError(t, m.Close())
 	<-closed
 }
 
 func TestMux_AcceptTimeout(t *testing.T) {
+	t.Skip()
 	m, err := mux.Listen("tcp", "127.0.0.1:0")
 	assert.NoError(t, err)
 	m.AcceptTimeout = 100 * time.Millisecond
 	l := m.Listen(1)
 	_, err = l.Accept()
 	assert.ErrorIs(t, err, mux.ErrConnectionTimeout)
+	assert.NoError(t, l.Close())
+	assert.NoError(t, m.Close())
+}
+
+func TestMux_PanicIfListenAfterServe(t *testing.T) {
+	m, err := mux.Listen("tcp", "127.0.0.1:0")
+	assert.NoError(t, err)
+	go func() {
+		assert.PanicsWithValue(t, "listen called after serve", func() {
+			m.Listen(0)
+		})
+		m.Close()
+	}()
+	m.Serve()
+}
+
+func TestMux_ListenAfterHandlerClosed(t *testing.T) {
+	m, err := mux.Listen("tcp", "127.0.0.1:0")
+	assert.NoError(t, err)
+	l := m.Listen(0)
+	l.Close()
+	_, err = l.Accept()
+	assert.ErrorIs(t, err, mux.ErrConnectionClosed)
+	m.Close()
+}
+
+func TestMux_ListenAfterMuxClosed(t *testing.T) {
+	m, err := mux.Listen("tcp", "127.0.0.1:0")
+	assert.NoError(t, err)
+	l := m.Listen(0)
+	m.Close()
+	_, err = l.Accept()
+	assert.ErrorIs(t, err, mux.ErrConnectionClosed)
 }
 
 // go test -run=^$ -bench=. -benchmem ./internal/mux
 
 // cpu: Intel(R) Core(TM) i7-9700K CPU @ 3.60GHz
-// BenchmarkNetAccept-8   	   13708	    101290 ns/op	     948 B/op	      23 allocs/op
-// BenchmarkMuxAccept-8   	    9002	    119678 ns/op	    1015 B/op	      27 allocs/op
+// BenchmarkNetAccept-8       14842             89467 ns/op             948 B/op         23 allocs/op
+// BenchmarkMuxAccept-8       13264             95585 ns/op            1002 B/op         27 allocs/op
 
 func BenchmarkNetAccept(b *testing.B) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")

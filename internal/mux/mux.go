@@ -18,9 +18,10 @@ type Mux struct {
 	innerLn net.Listener
 	ln      net.Listener
 
-	once    sync.Once
-	wg      sync.WaitGroup
-	running uint64
+	once       sync.Once
+	wg         sync.WaitGroup
+	running    uint64
+	shutdownCh chan struct{}
 
 	handlers map[byte]*handler
 }
@@ -44,6 +45,7 @@ func Listen(network string, address string) (*Mux, error) {
 		AcceptTimeout: DefaultAcceptTimeout,
 		innerLn:       ln,
 		ln:            ln,
+		shutdownCh:    make(chan struct{}),
 		handlers:      make(map[byte]*handler),
 	}
 	return mux, nil
@@ -62,6 +64,7 @@ func ListenTLS(network string, address string, config *tls.Config) (*Mux, error)
 		AcceptTimeout: DefaultAcceptTimeout,
 		innerLn:       ln,
 		ln:            tlsln,
+		shutdownCh:    make(chan struct{}),
 		handlers:      make(map[byte]*handler),
 	}
 	return mux, nil
@@ -76,6 +79,8 @@ func (mux *Mux) Close() (err error) {
 		if mux.ln != nil {
 			err = mux.ln.Close()
 		}
+
+		close(mux.shutdownCh)
 
 		// Wait for open connections to close and then close handlers
 		mux.wg.Wait()
@@ -154,7 +159,10 @@ func (mux *Mux) handleConn(conn net.Conn) error {
 	}
 
 	// Hand off connection to handler
-	h.c <- conn
+	select {
+	case h.c <- conn:
+	case <-mux.shutdownCh:
+	}
 
 	return nil
 }
@@ -165,9 +173,9 @@ func (mux *Mux) Listen(stream byte) net.Listener {
 		panic("listen called after serve")
 	}
 	h := &handler{
-		addr:          mux.ln.Addr(),
-		c:             make(chan net.Conn),
-		acceptTimeout: mux.AcceptTimeout,
+		addr:       mux.ln.Addr(),
+		c:          make(chan net.Conn),
+		shutdownCh: make(chan struct{}),
 	}
 	mux.handlers[stream] = h
 	return h
@@ -183,26 +191,25 @@ type handler struct {
 	addr net.Addr
 	c    chan net.Conn
 
-	acceptTimeout time.Duration
+	shutdownCh chan struct{}
 }
 
 // Accept waits for and returns the next connection.
 func (h *handler) Accept() (c net.Conn, err error) {
-	timeout := time.NewTimer(h.acceptTimeout)
-	defer timeout.Stop()
 	select {
 	case conn, ok := <-h.c:
 		if !ok {
 			return nil, ErrConnectionClosed
 		}
 		return conn, nil
-	case <-timeout.C:
-		return nil, ErrConnectionTimeout
+	case <-h.shutdownCh:
+		return nil, ErrConnectionClosed
 	}
 }
 
 // Close implements net.Listener.
 func (h *handler) Close() error {
+	close(h.shutdownCh)
 	return nil
 }
 
