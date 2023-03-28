@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"time"
 )
 
 // Config is DBadger node config.
@@ -31,7 +32,7 @@ type Config struct {
 	// by forcing a new cluster configuration. This works by reading all the current state
 	// for this node, creating a snapshot with the new configuration, and then truncating the log.
 	//
-	// Typicaly to bring the cluster back up you should choose a node to become a new leader, recover that node
+	// Typically to bring the cluster back up you should choose a node to become a new leader, recover that node
 	// and then join new clean-sate nodes as usual.
 	Recover bool
 
@@ -46,7 +47,38 @@ type Config struct {
 	// All data will be lost when node is stopped or crashed. Used primarily for testing purposes.
 	InMemory bool
 
-	// Logger configures wich logger DB uses.
+	// Specifies the time in follower state without contact from a leader before Raft attempts an election.
+	HeartbeatTimeout time.Duration
+
+	// Specifies the time in candidate state without contact from a leader before Raft attempts an election.
+	ElectionTimeout time.Duration
+
+	// Used to control how long the lease lasts for being the leader without being able to contact a quorum
+	// of nodes. If we reach this interval without contact, the node will step down as leader.
+	LeaderLeaseTimeout time.Duration
+
+	// Specifies the time without an Apply operation before the leader sends an AppendEntry RPC to followers,
+	// to ensure a timely commit of log entries.
+	CommitTimeout time.Duration
+
+	// Controls how often Raft checks if it should perform a snapshot.
+	//
+	// Raft randomly staggers between this value and 2x this value to
+	// avoid the entire cluster from performing a snapshot at once.
+	SnapshotInterval time.Duration
+
+	// SnapshotThreshold controls how many outstanding logs there must be before
+	// Raft performs a snapshot.
+	//
+	// This is to prevent excessive snapshotting by replaying a small set of logs instead.
+	SnapshotThreshold uint64
+
+	// Controls how many logs Raft leaves after a snapshot.
+	//
+	// This is used so that a follower can quickly replay logs instead of being forced to receive an entire snapshot.
+	TrailingLogs uint64
+
+	// Logger configures which logger DB uses.
 	//
 	// Leaving this nil will disable logging.
 	Logger Logger
@@ -57,15 +89,20 @@ func DefaultConfig(path string, bind Address) *Config {
 	return &Config{
 		Path: path,
 		Bind: bind,
+
+		HeartbeatTimeout:   1000 * time.Millisecond,
+		ElectionTimeout:    1000 * time.Millisecond,
+		LeaderLeaseTimeout: 500 * time.Millisecond,
+		CommitTimeout:      50 * time.Millisecond,
+		TrailingLogs:       10240,
+		SnapshotInterval:   120 * time.Second,
+		SnapshotThreshold:  8192,
 	}
 }
 
 // DefaultConfigInMemory returns default [Config] with InMemory mode turned on.
 func DefaultConfigInMemory(bind Address) *Config {
-	return &Config{
-		Bind:     bind,
-		InMemory: true,
-	}
+	return DefaultConfig("", bind).WithInMemory(true)
 }
 
 // WithInMemory returns [Config] with InMemory set to the given value.
@@ -118,6 +155,48 @@ func (c *Config) WithLogger(logger Logger) *Config {
 	return c
 }
 
+// WithHeartbeatTimeout returns [Config] with HeartbeatTimeout set to the given value.
+func (c *Config) WithHeartbeatTimeout(v time.Duration) *Config {
+	c.HeartbeatTimeout = v
+	return c
+}
+
+// WithElectionTimeout returns [Config] with ElectionTimeout set to the given value.
+func (c *Config) WithElectionTimeout(v time.Duration) *Config {
+	c.ElectionTimeout = v
+	return c
+}
+
+// WithLeaderLeaseTimeout returns [Config] with LeaderLeaseTimeout set to the given value.
+func (c *Config) WithLeaderLeaseTimeout(v time.Duration) *Config {
+	c.LeaderLeaseTimeout = v
+	return c
+}
+
+// WithCommitTimeout returns [Config] with CommitTimeout set to the given value.
+func (c *Config) WithCommitTimeout(v time.Duration) *Config {
+	c.CommitTimeout = v
+	return c
+}
+
+// WithSnapshotInterval returns [Config] with SnapshotInterval set to the given value.
+func (c *Config) WithSnapshotInterval(v time.Duration) *Config {
+	c.SnapshotInterval = v
+	return c
+}
+
+// WithSnapshotThreshold returns [Config] with SnapshotThreshold set to the given value.
+func (c *Config) WithSnapshotThreshold(v uint64) *Config {
+	c.SnapshotThreshold = v
+	return c
+}
+
+// WithTrailingLogs returns [Config] with TrailingLogs set to the given value.
+func (c *Config) WithTrailingLogs(v uint64) *Config {
+	c.TrailingLogs = v
+	return c
+}
+
 func (c *Config) validate() error {
 	var err error
 	if c.Path == "" && !c.InMemory {
@@ -145,6 +224,29 @@ func (c *Config) validate() error {
 			return fmt.Errorf("invalid Join address: %w", err)
 		}
 	}
+
+	if c.HeartbeatTimeout < 5*time.Millisecond {
+		return fmt.Errorf("HeartbeatTimeout is too low")
+	}
+	if c.ElectionTimeout < 5*time.Millisecond {
+		return fmt.Errorf("ElectionTimeout is too low")
+	}
+	if c.CommitTimeout < time.Millisecond {
+		return fmt.Errorf("CommitTimeout is too low")
+	}
+	if c.SnapshotInterval < 5*time.Millisecond {
+		return fmt.Errorf("SnapshotInterval is too low")
+	}
+	if c.LeaderLeaseTimeout < 5*time.Millisecond {
+		return fmt.Errorf("LeaderLeaseTimeout is too low")
+	}
+	if c.LeaderLeaseTimeout > c.HeartbeatTimeout {
+		return fmt.Errorf("LeaderLeaseTimeout (%s) cannot be larger than HeartbeatTimeout (%s)", c.LeaderLeaseTimeout, c.HeartbeatTimeout)
+	}
+	if c.ElectionTimeout < c.HeartbeatTimeout {
+		return fmt.Errorf("ElectionTimeout (%s) must be equal or greater than HeartbeatTimeout (%s)", c.ElectionTimeout, c.HeartbeatTimeout)
+	}
+
 	return nil
 }
 

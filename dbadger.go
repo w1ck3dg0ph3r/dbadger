@@ -335,9 +335,14 @@ func (db *DB) startRaft(bootstrap bool, recover bool, join Address) error {
 	db.raftConfig = raft.DefaultConfig()
 	db.raftConfig.LocalID = raft.ServerID(db.Addr())
 	db.raftConfig.Logger = newRaftLogAdapter("raft: ", db.log.Debugf)
-	db.raftConfig.HeartbeatTimeout = 150 * time.Millisecond
-	db.raftConfig.ElectionTimeout = 150 * time.Millisecond
-	db.raftConfig.LeaderLeaseTimeout = 75 * time.Millisecond
+	db.raftConfig.HeartbeatTimeout = db.config.HeartbeatTimeout
+	db.raftConfig.ElectionTimeout = db.config.ElectionTimeout
+	db.raftConfig.LeaderLeaseTimeout = db.config.LeaderLeaseTimeout
+	db.raftConfig.CommitTimeout = db.config.CommitTimeout
+	db.raftConfig.SnapshotInterval = db.config.SnapshotInterval
+	db.raftConfig.SnapshotThreshold = db.config.SnapshotThreshold
+	db.raftConfig.TrailingLogs = db.config.TrailingLogs
+	db.raftConfig.NoSnapshotRestoreOnStart = true
 
 	if db.tlsEnabled() {
 		db.raftTransport = mux.NewRaftTransportTLS(db.muxer, raftStream, 3, 1*time.Second, db.tlsConfig(), db.raftConfig.Logger)
