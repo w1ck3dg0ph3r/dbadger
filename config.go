@@ -184,6 +184,10 @@ func (c *TLSConfig) parse() (ca *x509.CertPool, cert *tls.Certificate, err error
 		}
 	}
 
+	if len(c.CA) == 0 || len(c.Cert) == 0 || len(c.Key) == 0 {
+		return nil, nil, nil
+	}
+
 	ca = x509.NewCertPool()
 	caPEM := c.CA
 	for len(caPEM) > 0 {
