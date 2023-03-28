@@ -11,21 +11,48 @@ import (
 
 // Config is DBadger node config.
 type Config struct {
-	Path string // Data directory path
+	// The path of the directory where data will be stored in.
+	// If directory does not exists it will be created.
+	Path string
 
-	Bind Address // Bind address
+	// Network address for the node to listen on (for example, "127.0.0.1:7001", "[::1]:7001", ":7001").
+	Bind Address
 
-	TLS TLSConfig // TLS configuration
+	// TLS configuration.
+	TLS TLSConfig
 
-	Bootstrap bool    // Bootstrap new node
-	Recover   bool    // Recover node
-	Join      Address // Join cluster
+	// Bootstrap a new cluster from this node.
+	//
+	// A cluster should only be bootstrapped once from a single primary node.
+	// After that other nodes can join the cluster.
+	Bootstrap bool
 
+	// Recover cluster from a loss of quorum (e.g. when multiple nodes die at the same time)
+	// by forcing a new cluster configuration. This works by reading all the current state
+	// for this node, creating a snapshot with the new configuration, and then truncating the log.
+	//
+	// Typicaly to bring the cluster back up you should choose a node to become a new leader, recover that node
+	// and then join new clean-sate nodes as usual.
+	Recover bool
+
+	// Join an existing cluster via given node.
+	//
+	// It is safe to join a cluster via any node. If the target node is not a leader of the cluster
+	// it will forward the request to the cluster's leader.
+	Join Address
+
+	// Run in InMemory mode, which means everything is stored in memory and no files are created.
+	//
+	// All data will be lost when node is stopped or crashed. Used primarily for testing purposes.
 	InMemory bool
 
+	// Logger configures wich logger DB uses.
+	//
+	// Leaving this nil will disable logging.
 	Logger Logger
 }
 
+// DefaultConfig return default [Config].
 func DefaultConfig(path string, bind Address) *Config {
 	return &Config{
 		Path: path,
@@ -33,6 +60,7 @@ func DefaultConfig(path string, bind Address) *Config {
 	}
 }
 
+// DefaultConfigInMemory returns default [Config] with InMemory mode turned on.
 func DefaultConfigInMemory(bind Address) *Config {
 	return &Config{
 		Bind:     bind,
@@ -40,11 +68,13 @@ func DefaultConfigInMemory(bind Address) *Config {
 	}
 }
 
+// WithInMemory returns [Config] with InMemory set to the given value.
 func (c *Config) WithInMemory(inmem bool) *Config {
 	c.InMemory = inmem
 	return c
 }
 
+// WithTLS returns [Config] with TLS configuration set to the given values.
 func (c *Config) WithTLS(ca, cert, key []byte) *Config {
 	c.TLS = TLSConfig{
 		CA:   ca,
@@ -54,6 +84,7 @@ func (c *Config) WithTLS(ca, cert, key []byte) *Config {
 	return c
 }
 
+// WithTLSFiles returns [Config] with TLS configuration set to the given values.
 func (c *Config) WithTLSFiles(caFile, certFile, keyFile string) *Config {
 	c.TLS = TLSConfig{
 		CAFile:   caFile,
@@ -63,23 +94,27 @@ func (c *Config) WithTLSFiles(caFile, certFile, keyFile string) *Config {
 	return c
 }
 
-func (c *Config) WithLogger(logger Logger) *Config {
-	c.Logger = logger
-	return c
-}
-
+// WithBootstrap returns [Config] with Bootstrap set to the given value.
 func (c *Config) WithBootstrap(bootstrap bool) *Config {
 	c.Bootstrap = bootstrap
 	return c
 }
 
+// WithRecover returns [Config] with Recover set to the given value.
 func (c *Config) WithRecover(recover bool) *Config {
 	c.Recover = recover
 	return c
 }
 
+// WithJoin returns [Config] with Join set to the given value.
 func (c *Config) WithJoin(join Address) *Config {
 	c.Join = join
+	return c
+}
+
+// WithLogger returns [Config] with Logger set to the given value.
+func (c *Config) WithLogger(logger Logger) *Config {
+	c.Logger = logger
 	return c
 }
 
@@ -118,13 +153,13 @@ func (c *Config) validate() error {
 // PEM encoded options are prioritized over file paths. You can mix
 // both file and PEM options in the same config.
 type TLSConfig struct {
-	CA   []byte // PEM encoded TLS certificate authority
-	Cert []byte // PEM encoded TLS certificate
-	Key  []byte // PEM encoded TLS private key
+	CA   []byte // PEM encoded TLS certificate authority.
+	Cert []byte // PEM encoded TLS certificate.
+	Key  []byte // PEM encoded TLS private key.
 
-	CAFile   string // TLS certificate authority file path
-	CertFile string // TLS certificate file path
-	KeyFile  string // TLS private key file path
+	CAFile   string // TLS certificate authority file path.
+	CertFile string // TLS certificate file path.
+	KeyFile  string // TLS private key file path.
 }
 
 func (c *TLSConfig) parse() (ca *x509.CertPool, cert *tls.Certificate, err error) {
