@@ -538,7 +538,7 @@ func logCommand(cmd *rpc.Command) *raft.Log {
 }
 
 func createDataStore(t *testing.T) *DataStore {
-	fsm, err := NewDataStore(DefaultDataStoreConfig("").WithInMemory(true))
+	fsm, err := NewDataStore(DefaultDataStoreConfig("", true))
 	assert.NoError(t, err)
 	return fsm
 }

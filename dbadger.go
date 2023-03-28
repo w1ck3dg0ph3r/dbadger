@@ -261,18 +261,31 @@ func (db *DB) createStores(basePath string) error {
 	var err error
 
 	db.log.Infof("opening fsm...")
+	if db.config.DataStoreConfig == nil {
+		db.config.DataStoreConfig = DefaultDataStoreConfig()
+	}
 	db.data, err = stores.NewDataStore(
-		stores.DefaultDataStoreConfig(filepath.Join(basePath, "data")).
-			WithInMemory(db.config.InMemory).
-			WithLogger(newBadgerLogAdapter("fsm: ", db.log.Debugf)))
+		db.config.DataStoreConfig.storeConfig(
+			filepath.Join(basePath, "data"),
+			db.config.InMemory,
+			newBadgerLogAdapter("fsm: ", db.log.Debugf),
+		),
+	)
 	if err != nil {
 		return err
 	}
 
 	db.log.Infof("opening log store...")
-	db.logStore, err = stores.NewLogStore(stores.DefaultLogStoreConfig(filepath.Join(basePath, "logs")).
-		WithInMemory(db.config.InMemory).
-		WithLogger(newBadgerLogAdapter("log store: ", db.log.Debugf)))
+	if db.config.LogStoreConfig == nil {
+		db.config.LogStoreConfig = DefaultLogStoreConfig()
+	}
+	db.logStore, err = stores.NewLogStore(
+		db.config.LogStoreConfig.storeConfig(
+			filepath.Join(basePath, "logs"),
+			db.config.InMemory,
+			newBadgerLogAdapter("log store: ", db.log.Debugf),
+		),
+	)
 	if err != nil {
 		return err
 	}

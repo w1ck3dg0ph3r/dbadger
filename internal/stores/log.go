@@ -14,14 +14,32 @@ type LogStore struct {
 	badgerStore
 }
 
-func DefaultLogStoreConfig(path string) *Config {
+func DefaultLogStoreConfig(path string, inmem bool) *Config {
+	defaults := badger.DefaultOptions(path)
 	return &Config{
 		Path:     path,
-		InMemory: false,
+		InMemory: inmem,
 
-		GCEnabled:      true,
-		GCInterval:     10 * time.Minute,
-		GCDiscardRatio: 0.7,
+		SyncWrites:              defaults.SyncWrites,
+		MaxLevels:               defaults.MaxLevels,
+		LevelSizeMultiplier:     defaults.LevelSizeMultiplier,
+		BaseTableSize:           defaults.BaseTableSize,
+		BaseLevelSize:           defaults.BaseLevelSize,
+		ValueLogFileSize:        defaults.ValueLogFileSize,
+		ValueLogMaxEntries:      defaults.ValueLogMaxEntries,
+		NumMemtables:            defaults.NumMemtables,
+		MemTableSize:            defaults.MemTableSize,
+		BlockSize:               defaults.BlockSize,
+		BlockCacheSize:          defaults.BlockCacheSize,
+		NumLevelZeroTables:      defaults.NumLevelZeroTables,
+		NumLevelZeroTablesStall: defaults.NumLevelZeroTablesStall,
+		NumCompactors:           defaults.NumCompactors,
+		CompactL0OnClose:        defaults.CompactL0OnClose,
+		Compression:             true,
+
+		GCEnabled: false,
+
+		Logger: nil,
 	}
 }
 

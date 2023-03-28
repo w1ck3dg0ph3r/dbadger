@@ -8,6 +8,10 @@ import (
 	"net"
 	"os"
 	"time"
+
+	"github.com/dgraph-io/badger/v4"
+
+	"github.com/w1ck3dg0ph3r/dbadger/internal/stores"
 )
 
 // Config is DBadger node config.
@@ -23,6 +27,15 @@ type Config struct {
 
 	// TLS configuration.
 	TLS TLSConfig
+
+	// Run in InMemory mode, which means everything is stored in memory and no files are created.
+	//
+	// All data will be lost when node is stopped or crashed. Used primarily for testing purposes.
+	InMemory bool
+
+	//////////////////////////////////////////////////////////////
+	// Startup mode
+	//////////////////////////////////////////////////////////////
 
 	// Bootstrap a new cluster from this node.
 	//
@@ -44,10 +57,9 @@ type Config struct {
 	// it will forward the request to the cluster's leader.
 	Join Address
 
-	// Run in InMemory mode, which means everything is stored in memory and no files are created.
-	//
-	// All data will be lost when node is stopped or crashed. Used primarily for testing purposes.
-	InMemory bool
+	//////////////////////////////////////////////////////////////
+	// Consensus options
+	//////////////////////////////////////////////////////////////
 
 	// Specifies the time in follower state without contact from a leader before Raft attempts an election.
 	HeartbeatTimeout time.Duration
@@ -82,6 +94,16 @@ type Config struct {
 	// This is used so that a follower can quickly replay logs instead of being forced to receive an entire snapshot.
 	TrailingLogs uint64
 
+	//////////////////////////////////////////////////////////////
+	// Store options
+	//////////////////////////////////////////////////////////////
+
+	// Replicated log storage config.
+	LogStoreConfig *StoreConfig
+
+	// Data storage config.
+	DataStoreConfig *StoreConfig
+
 	// Logger configures which logger DB uses.
 	//
 	// Leaving this nil will disable logging.
@@ -102,6 +124,9 @@ func DefaultConfig(path string, bind Address) *Config {
 		SnapshotThreshold:  8192,
 		SnapshotRetention:  1,
 		TrailingLogs:       10240,
+
+		LogStoreConfig:  DefaultLogStoreConfig(),
+		DataStoreConfig: DefaultDataStoreConfig(),
 	}
 }
 
@@ -154,12 +179,6 @@ func (c *Config) WithJoin(join Address) *Config {
 	return c
 }
 
-// WithLogger returns [Config] with Logger set to the given value.
-func (c *Config) WithLogger(logger Logger) *Config {
-	c.Logger = logger
-	return c
-}
-
 // WithHeartbeatTimeout returns [Config] with HeartbeatTimeout set to the given value.
 func (c *Config) WithHeartbeatTimeout(v time.Duration) *Config {
 	c.HeartbeatTimeout = v
@@ -205,6 +224,24 @@ func (c *Config) WithSnapshotRetention(v int) *Config {
 // WithTrailingLogs returns [Config] with TrailingLogs set to the given value.
 func (c *Config) WithTrailingLogs(v uint64) *Config {
 	c.TrailingLogs = v
+	return c
+}
+
+// WithLogStoreConfig returns [Config] with LogStoreConfig set to the given value.
+func (c *Config) WithLogStoreConfig(v *StoreConfig) *Config {
+	c.LogStoreConfig = v
+	return c
+}
+
+// WithDataStoreConfig returns [Config] with DataStoreConfig set to the given value.
+func (c *Config) WithDataStoreConfig(v *StoreConfig) *Config {
+	c.DataStoreConfig = v
+	return c
+}
+
+// WithLogger returns [Config] with Logger set to the given value.
+func (c *Config) WithLogger(logger Logger) *Config {
+	c.Logger = logger
 	return c
 }
 
@@ -329,4 +366,151 @@ func (c *TLSConfig) parse() (ca *x509.CertPool, cert *tls.Certificate, err error
 	cert = &tlscert
 
 	return ca, cert, nil
+}
+
+// StoreConfig is a persistent storage configuration.
+type StoreConfig struct {
+	// When set to true, Badger would call an additional msync after writes to flush mmap buffer over to
+	// disk to survive hard reboots. Most users of Badger should not need to do this.
+	SyncWrites bool
+
+	// Maximum number of levels of compaction allowed in the LSM.
+	MaxLevels int
+	// Sets the ratio between the maximum sizes of contiguous levels in the LSM.
+	// Once a level grows to be larger than this ratio, the compaction process will be triggered.
+	LevelSizeMultiplier int
+	// Sets the maximum size in bytes for LSM table or file in the base level.
+	BaseTableSize int64
+	// Sets the maximum size target for the base level.
+	BaseLevelSize int64
+	// Sets the maximum size of a single value log file.
+	ValueLogFileSize int64
+	// Sets the maximum number of entries a value log file can hold approximately.
+	//
+	// The actual size limit of a value log file is the
+	// minimum of ValueLogFileSize and ValueLogMaxEntries.
+	ValueLogMaxEntries uint32
+
+	// Sets the maximum number of tables to keep in memory before stalling.
+	NumMemtables int
+	// Sets the maximum size in bytes for memtable table.
+	MemTableSize int64
+
+	// Sets the size of any block in SSTable. SSTable is divided into multiple blocks internally.
+	BlockSize int
+	// Specifies how much data cache should be held in memory. A small size
+	// of cache means lower memory consumption and lookups/iterations would take
+	// longer. It is recommended to use a cache if you're using compression or encryption.
+	// If compression and encryption both are disabled, adding a cache will lead to
+	// unnecessary overhead which will affect the read performance. Setting size to
+	// zero disables the cache altogether.
+	BlockCacheSize int64
+
+	// Sets the maximum number of Level 0 tables before compaction starts.
+	NumLevelZeroTables int
+	// Sets the number of Level 0 tables that once reached causes the DB to
+	// stall until compaction succeeds.
+	NumLevelZeroTablesStall int
+	// Sets the number of compaction workers to run concurrently.  Setting this to
+	// zero stops compactions, which could eventually cause writes to block forever.
+	NumCompactors int
+	// Sets whether Level 0 should be compacted before closing the DB. This ensures
+	// that both reads and writes are efficient when the DB is opened later.
+	CompactL0OnClose bool
+
+	// Enables snappy compression for every block.
+	Compression bool
+
+	// Enable value log garbage collection.
+	GCEnabled bool
+	// Value log garbage collection interval.
+	GCInterval time.Duration
+	// During value log garbage collection rewrite files when BadgerDB can discard
+	// at least discardRatio space of that file.
+	GCDiscardRatio float64
+}
+
+// DefaultLogStoreConfig returns default replicated log storage config.
+func DefaultLogStoreConfig() *StoreConfig {
+	return &StoreConfig{
+		SyncWrites:              false,
+		MaxLevels:               7,
+		LevelSizeMultiplier:     10,
+		BaseTableSize:           2 << 20,
+		BaseLevelSize:           10 << 20,
+		ValueLogFileSize:        1<<30 - 1,
+		ValueLogMaxEntries:      1e6,
+		NumMemtables:            5,
+		MemTableSize:            64 << 20,
+		BlockSize:               4 << 10,
+		BlockCacheSize:          256 << 20,
+		NumLevelZeroTables:      5,
+		NumLevelZeroTablesStall: 15,
+		NumCompactors:           4,
+		CompactL0OnClose:        false,
+		Compression:             false,
+		GCEnabled:               false,
+		GCInterval:              0,
+		GCDiscardRatio:          0.0,
+	}
+}
+
+// DefaultDataStoreConfig returns default data storage config.
+func DefaultDataStoreConfig() *StoreConfig {
+	return &StoreConfig{
+		SyncWrites:              false,
+		MaxLevels:               7,
+		LevelSizeMultiplier:     10,
+		BaseTableSize:           2 << 20,
+		BaseLevelSize:           10 << 20,
+		ValueLogFileSize:        1<<30 - 1,
+		ValueLogMaxEntries:      1e6,
+		NumMemtables:            5,
+		MemTableSize:            64 << 20,
+		BlockSize:               4 << 10,
+		BlockCacheSize:          256 << 20,
+		NumLevelZeroTables:      5,
+		NumLevelZeroTablesStall: 15,
+		NumCompactors:           4,
+		CompactL0OnClose:        false,
+		Compression:             true,
+		GCEnabled:               true,
+		GCInterval:              5 * time.Minute,
+		GCDiscardRatio:          0.5,
+	}
+}
+
+// WithGC returns [StorageConfig] with value log garbage collection enabled.
+func (c *StoreConfig) WithGC(interval time.Duration, discardRatio float64) *StoreConfig {
+	c.GCEnabled = true
+	c.GCInterval = interval
+	c.GCDiscardRatio = discardRatio
+	return c
+}
+
+func (c *StoreConfig) storeConfig(path string, inmem bool, logger badger.Logger) *stores.Config {
+	return &stores.Config{
+		Path:                    path,
+		InMemory:                inmem,
+		SyncWrites:              c.SyncWrites,
+		MaxLevels:               c.MaxLevels,
+		LevelSizeMultiplier:     c.LevelSizeMultiplier,
+		BaseTableSize:           c.BaseTableSize,
+		BaseLevelSize:           c.BaseLevelSize,
+		ValueLogFileSize:        c.ValueLogFileSize,
+		ValueLogMaxEntries:      c.ValueLogMaxEntries,
+		NumMemtables:            c.NumMemtables,
+		MemTableSize:            c.MemTableSize,
+		BlockSize:               c.BlockSize,
+		BlockCacheSize:          c.BlockCacheSize,
+		NumLevelZeroTables:      c.NumLevelZeroTables,
+		NumLevelZeroTablesStall: c.NumLevelZeroTablesStall,
+		NumCompactors:           c.NumCompactors,
+		CompactL0OnClose:        c.CompactL0OnClose,
+		Compression:             c.Compression,
+		GCEnabled:               c.GCEnabled,
+		GCInterval:              c.GCInterval,
+		GCDiscardRatio:          c.GCDiscardRatio,
+		Logger:                  logger,
+	}
 }
