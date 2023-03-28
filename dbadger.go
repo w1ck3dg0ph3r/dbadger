@@ -282,13 +282,12 @@ func (db *DB) createStores(basePath string) error {
 		return err
 	}
 
-	const snapshotRetention = 3
 	if db.config.InMemory {
 		db.snapshotStore, err = raft.NewInmemSnapshotStore(), nil
 	} else {
 		db.snapshotStore, err = raft.NewFileSnapshotStoreWithLogger(
 			basePath,
-			snapshotRetention,
+			db.config.SnapshotRetention,
 			newRaftLogAdapter("snapshot store: ", db.log.Debugf),
 		)
 	}

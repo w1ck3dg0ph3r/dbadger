@@ -11,6 +11,8 @@ import (
 )
 
 // Config is DBadger node config.
+//
+// See [DefaultConfig] for defaults.
 type Config struct {
 	// The path of the directory where data will be stored in.
 	// If directory does not exists it will be created.
@@ -67,11 +69,13 @@ type Config struct {
 	// avoid the entire cluster from performing a snapshot at once.
 	SnapshotInterval time.Duration
 
-	// SnapshotThreshold controls how many outstanding logs there must be before
-	// Raft performs a snapshot.
+	// Controls how many outstanding logs there must be before Raft performs a snapshot.
 	//
 	// This is to prevent excessive snapshotting by replaying a small set of logs instead.
 	SnapshotThreshold uint64
+
+	// Controls how many snapshots are retained. Must be at least 1.
+	SnapshotRetention int
 
 	// Controls how many logs Raft leaves after a snapshot.
 	//
@@ -94,9 +98,10 @@ func DefaultConfig(path string, bind Address) *Config {
 		ElectionTimeout:    1000 * time.Millisecond,
 		LeaderLeaseTimeout: 500 * time.Millisecond,
 		CommitTimeout:      50 * time.Millisecond,
-		TrailingLogs:       10240,
 		SnapshotInterval:   120 * time.Second,
 		SnapshotThreshold:  8192,
+		SnapshotRetention:  1,
+		TrailingLogs:       10240,
 	}
 }
 
@@ -191,13 +196,19 @@ func (c *Config) WithSnapshotThreshold(v uint64) *Config {
 	return c
 }
 
+// WithSnapshotRetention returns [Config] with SnapshotRetention set to the given value.
+func (c *Config) WithSnapshotRetention(v int) *Config {
+	c.SnapshotRetention = v
+	return c
+}
+
 // WithTrailingLogs returns [Config] with TrailingLogs set to the given value.
 func (c *Config) WithTrailingLogs(v uint64) *Config {
 	c.TrailingLogs = v
 	return c
 }
 
-func (c *Config) validate() error {
+func (c *Config) validate() error { //nolint:cyclop
 	var err error
 	if c.Path == "" && !c.InMemory {
 		return fmt.Errorf("either Path or InMemory must be set")
@@ -236,6 +247,9 @@ func (c *Config) validate() error {
 	}
 	if c.SnapshotInterval < 5*time.Millisecond {
 		return fmt.Errorf("SnapshotInterval is too low")
+	}
+	if c.SnapshotRetention < 1 {
+		return fmt.Errorf("SnapshotRetention must be at least 1")
 	}
 	if c.LeaderLeaseTimeout < 5*time.Millisecond {
 		return fmt.Errorf("LeaderLeaseTimeout is too low")
