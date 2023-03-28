@@ -1,8 +1,12 @@
 package dbadger
 
 import (
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"net"
+	"os"
 )
 
 // Config is DBadger node config.
@@ -20,16 +24,6 @@ type Config struct {
 	InMemory bool
 
 	Logger Logger
-}
-
-type TLSConfig struct {
-	CA   []byte // PEM encoded TLS certificate authority
-	Cert []byte // PEM encoded TLS certificate
-	Key  []byte // PEM encoded TLS private key
-
-	CAFile   string // TLS certificate authority file path
-	CertFile string // TLS certificate file path
-	KeyFile  string // TLS private key file path
 }
 
 func DefaultConfig(path string, bind Address) *Config {
@@ -117,4 +111,67 @@ func (c *Config) validate() error {
 		}
 	}
 	return nil
+}
+
+// TLSConfig is a TLS configuration.
+//
+// PEM encoded options are prioritized over file paths. You can mix
+// both file and PEM options in the same config.
+type TLSConfig struct {
+	CA   []byte // PEM encoded TLS certificate authority
+	Cert []byte // PEM encoded TLS certificate
+	Key  []byte // PEM encoded TLS private key
+
+	CAFile   string // TLS certificate authority file path
+	CertFile string // TLS certificate file path
+	KeyFile  string // TLS private key file path
+}
+
+func (c *TLSConfig) parse() (ca *x509.CertPool, cert *tls.Certificate, err error) {
+	if c.CA == nil && c.CAFile != "" {
+		c.CA, err = os.ReadFile(c.CAFile)
+		if err != nil {
+			return nil, nil, fmt.Errorf("read ca file: %w", err)
+		}
+	}
+
+	if c.Cert == nil && c.CertFile != "" {
+		c.Cert, err = os.ReadFile(c.CertFile)
+		if err != nil {
+			return nil, nil, fmt.Errorf("read cert file: %w", err)
+		}
+	}
+
+	if c.Key == nil && c.KeyFile != "" {
+		c.Key, err = os.ReadFile(c.KeyFile)
+		if err != nil {
+			return nil, nil, fmt.Errorf("read key file: %w", err)
+		}
+	}
+
+	ca = x509.NewCertPool()
+	caPEM := c.CA
+	for len(caPEM) > 0 {
+		var block *pem.Block
+		block, caPEM = pem.Decode(caPEM)
+		if block == nil {
+			break
+		}
+		if block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
+			continue
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return nil, nil, fmt.Errorf("parse ca: %w", err)
+		}
+		ca.AddCert(cert)
+	}
+
+	tlscert, err := tls.X509KeyPair(c.Cert, c.Key)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse cert/key: %w", err)
+	}
+	cert = &tlscert
+
+	return ca, cert, nil
 }

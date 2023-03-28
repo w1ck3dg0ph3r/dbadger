@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"fmt"
 	"net"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -88,7 +87,8 @@ func Start(cfg *Config) (*DB, error) {
 		db.log = db.config.Logger
 	}
 
-	if err = db.loadCerts(); err != nil {
+	db.ca, db.cert, err = db.config.TLS.parse()
+	if err != nil {
 		return nil, err
 	}
 
@@ -556,40 +556,6 @@ func (db *DB) logConfiguration(log logFunc) {
 		servers = append(servers, s)
 	}
 	log("current configuration: [%s]", strings.Join(servers, ", "))
-}
-
-func (db *DB) loadCerts() error {
-	if db.config.TLS.CAFile != "" {
-		buf, err := os.ReadFile(db.config.TLS.CAFile)
-		if err != nil {
-			return fmt.Errorf("load ca file: %w", err)
-		}
-		db.ca = x509.NewCertPool()
-		db.ca.AppendCertsFromPEM(buf)
-	}
-
-	if db.config.TLS.CertFile != "" && db.config.TLS.KeyFile != "" {
-		cert, err := tls.LoadX509KeyPair(db.config.TLS.CertFile, db.config.TLS.KeyFile)
-		if err != nil {
-			return fmt.Errorf("load cert/key pair: %w", err)
-		}
-		db.cert = &cert
-	}
-
-	if len(db.config.TLS.CA) > 0 {
-		db.ca = x509.NewCertPool()
-		db.ca.AppendCertsFromPEM(db.config.TLS.CA)
-	}
-
-	if len(db.config.TLS.Cert) > 0 && len(db.config.TLS.Key) > 0 {
-		cert, err := tls.X509KeyPair(db.config.TLS.Cert, db.config.TLS.Key)
-		if err != nil {
-			return fmt.Errorf("parse cert/key: %w", err)
-		}
-		db.cert = &cert
-	}
-
-	return nil
 }
 
 func (db *DB) tlsEnabled() bool {
