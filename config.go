@@ -18,17 +18,18 @@ import (
 //
 // See [DefaultConfig] for defaults.
 type Config struct {
-	// The path of the directory where data will be stored in.
-	// If directory does not exists it will be created.
+	// Path is the path of the directory where data will be stored in. If directory does not exists it will be created.
 	Path string
 
-	// Network address for the node to listen on (for example, "127.0.0.1:7001", "[::1]:7001", ":7001").
+	// Bind is a network address for the node to listen on (for example, "127.0.0.1:7001", "[::1]:7001", ":7001").
 	Bind Address
 
-	// TLS configuration.
+	// TLS configures certificates and keys for the node.
+	//
+	// Zero value means TLS is disabled.
 	TLS TLSConfig
 
-	// Run in InMemory mode, which means everything is stored in memory and no files are created.
+	// InMemory makes node run in in-memory mode, which means everything is stored in memory and no files are created.
 	//
 	// All data will be lost when node is stopped or crashed. Used primarily for testing purposes.
 	InMemory bool
@@ -47,8 +48,8 @@ type Config struct {
 	// by forcing a new cluster configuration. This works by reading all the current state
 	// for this node, creating a snapshot with the new configuration, and then truncating the log.
 	//
-	// Typically to bring the cluster back up you should choose a node to become a new leader, recover that node
-	// and then join new clean-sate nodes as usual.
+	// Typically to bring the cluster back up you should choose a node to become a new leader,
+	// recover that node and then join new clean-sate nodes as usual.
 	Recover bool
 
 	// Join an existing cluster via given node.
@@ -61,47 +62,51 @@ type Config struct {
 	// Consensus options
 	//////////////////////////////////////////////////////////////
 
-	// Specifies the time in follower state without contact from a leader before Raft attempts an election.
+	// HeartbeatTimeout specifies the time in follower state without contact from a leader before
+	// Raft attempts an election.
 	HeartbeatTimeout time.Duration
 
-	// Specifies the time in candidate state without contact from a leader before Raft attempts an election.
+	// ElectionTimeout specifies the time in candidate state without contact from a leader before
+	// Raft attempts an election.
 	ElectionTimeout time.Duration
 
-	// Used to control how long the lease lasts for being the leader without being able to contact a quorum
-	// of nodes. If we reach this interval without contact, the node will step down as leader.
+	// LeaderLeaseTimeout is used to control how long the lease lasts for being the leader without
+	// being able to contact a quorum of nodes. If we reach this interval without contact,
+	// the node will step down as leader.
 	LeaderLeaseTimeout time.Duration
 
-	// Specifies the time without an Apply operation before the leader sends an AppendEntry RPC to followers,
-	// to ensure a timely commit of log entries.
+	// CommitTimeout specifies the time without an Apply operation before the leader sends an
+	// AppendEntry RPC to followers, to ensure a timely commit of log entries.
 	CommitTimeout time.Duration
 
-	// Controls how often Raft checks if it should perform a snapshot.
+	// SnapshotInterval controls how often Raft checks if it should perform a snapshot.
 	//
-	// Raft randomly staggers between this value and 2x this value to
-	// avoid the entire cluster from performing a snapshot at once.
+	// Raft randomly staggers between this value and 2x this value to avoid the entire cluster
+	// from performing a snapshot at once.
 	SnapshotInterval time.Duration
 
-	// Controls how many outstanding logs there must be before Raft performs a snapshot.
+	// SnapshotThreshold controls how many outstanding logs there must be before Raft performs a snapshot.
 	//
 	// This is to prevent excessive snapshotting by replaying a small set of logs instead.
 	SnapshotThreshold uint64
 
-	// Controls how many snapshots are retained. Must be at least 1.
+	// SnapshotRetention controls how many snapshots are retained. Must be at least 1.
 	SnapshotRetention int
 
-	// Controls how many logs Raft leaves after a snapshot.
+	// TrailingLogs controls how many logs Raft leaves after a snapshot.
 	//
-	// This is used so that a follower can quickly replay logs instead of being forced to receive an entire snapshot.
+	// This is used so that a follower can quickly replay logs instead of being forced
+	// to receive an entire snapshot.
 	TrailingLogs uint64
 
 	//////////////////////////////////////////////////////////////
 	// Store options
 	//////////////////////////////////////////////////////////////
 
-	// Replicated log storage config.
+	// LogStoreConfig configures replicated log storage.
 	LogStoreConfig *StoreConfig
 
-	// Data storage config.
+	// DataStoreConfig configures data storage.
 	DataStoreConfig *StoreConfig
 
 	// Logger configures which logger DB uses.
@@ -370,35 +375,35 @@ func (c *TLSConfig) parse() (ca *x509.CertPool, cert *tls.Certificate, err error
 
 // StoreConfig is a persistent storage configuration.
 type StoreConfig struct {
-	// When set to true, Badger would call an additional msync after writes to flush mmap buffer over to
-	// disk to survive hard reboots. Most users of Badger should not need to do this.
+	// SyncWrites controls whether Badger would call an additional msync after writes to flush mmap
+	// buffer over to disk to survive hard reboots. Most users should not need to do this.
 	SyncWrites bool
 
-	// Maximum number of levels of compaction allowed in the LSM.
+	// MaxLevels is the maximum number of levels of compaction allowed in the LSM.
 	MaxLevels int
-	// Sets the ratio between the maximum sizes of contiguous levels in the LSM.
+	// LevelSizeMultiplier sets the ratio between the maximum sizes of contiguous levels in the LSM.
 	// Once a level grows to be larger than this ratio, the compaction process will be triggered.
 	LevelSizeMultiplier int
-	// Sets the maximum size in bytes for LSM table or file in the base level.
+	// BaseTableSize sets the maximum size in bytes for LSM table or file in the base level.
 	BaseTableSize int64
-	// Sets the maximum size target for the base level.
+	// BaseLevelSize sets the maximum size target for the base level.
 	BaseLevelSize int64
-	// Sets the maximum size of a single value log file.
+	// ValueLogFileSize sets the maximum size of a single value log file.
 	ValueLogFileSize int64
-	// Sets the maximum number of entries a value log file can hold approximately.
+	// ValueLogMaxEntries sets the maximum number of entries a value log file can hold approximately.
 	//
 	// The actual size limit of a value log file is the
 	// minimum of ValueLogFileSize and ValueLogMaxEntries.
 	ValueLogMaxEntries uint32
 
-	// Sets the maximum number of tables to keep in memory before stalling.
+	// NumMemtables sets the maximum number of tables to keep in memory before stalling.
 	NumMemtables int
-	// Sets the maximum size in bytes for memtable table.
+	// MemTableSize sets the maximum size in bytes for memtable table.
 	MemTableSize int64
 
-	// Sets the size of any block in SSTable. SSTable is divided into multiple blocks internally.
+	// BlockSize sets the size of any block in SSTable. SSTable is divided into multiple blocks internally.
 	BlockSize int
-	// Specifies how much data cache should be held in memory. A small size
+	// BlockCacheSize specifies how much data cache should be held in memory. A small size
 	// of cache means lower memory consumption and lookups/iterations would take
 	// longer. It is recommended to use a cache if you're using compression or encryption.
 	// If compression and encryption both are disabled, adding a cache will lead to
@@ -406,26 +411,28 @@ type StoreConfig struct {
 	// zero disables the cache altogether.
 	BlockCacheSize int64
 
-	// Sets the maximum number of Level 0 tables before compaction starts.
+	// NumLevelZeroTables sets the maximum number of Level 0 tables before compaction starts.
 	NumLevelZeroTables int
-	// Sets the number of Level 0 tables that once reached causes the DB to
+	// NumLevelZeroTablesStall sets the number of Level 0 tables that once reached causes the DB to
 	// stall until compaction succeeds.
 	NumLevelZeroTablesStall int
-	// Sets the number of compaction workers to run concurrently.  Setting this to
+	// NumCompactors sets the number of compaction workers to run concurrently.  Setting this to
 	// zero stops compactions, which could eventually cause writes to block forever.
 	NumCompactors int
-	// Sets whether Level 0 should be compacted before closing the DB. This ensures
+	// CompactL0OnClose sets whether Level 0 should be compacted before closing the DB. This ensures
 	// that both reads and writes are efficient when the DB is opened later.
 	CompactL0OnClose bool
 
-	// Enables snappy compression for every block.
+	// Compression enables snappy compression for every block.
 	Compression bool
 
-	// Enable value log garbage collection.
+	// GCEnabled enables value log garbage collection.
 	GCEnabled bool
-	// Value log garbage collection interval.
+	// GCInterval sets value log garbage collection interval.
 	GCInterval time.Duration
-	// During value log garbage collection rewrite files when BadgerDB can discard
+	// GCDiscardRatio sets threshold for rewriting files during garbage collection.
+	//
+	// During value log garbage collection Badger will rewrite files when it can discard
 	// at least discardRatio space of that file.
 	GCDiscardRatio float64
 }
