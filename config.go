@@ -480,6 +480,102 @@ func DefaultDataStoreConfig() *StoreConfig {
 	}
 }
 
+// WithSyncWrites returns [StorageConfig] with SyncWrites set to the given value.
+func (c *StoreConfig) WithSyncWrites(v bool) *StoreConfig {
+	c.SyncWrites = v
+	return c
+}
+
+// WithMaxLevels returns [StorageConfig] with MaxLevels set to the given value.
+func (c *StoreConfig) WithMaxLevels(v int) *StoreConfig {
+	c.MaxLevels = v
+	return c
+}
+
+// WithLevelSizeMultiplier returns [StorageConfig] with LevelSizeMultiplier set to the given value.
+func (c *StoreConfig) WithLevelSizeMultiplier(v int) *StoreConfig {
+	c.LevelSizeMultiplier = v
+	return c
+}
+
+// WithBaseTableSize returns [StorageConfig] with BaseTableSize set to the given value.
+func (c *StoreConfig) WithBaseTableSize(v int64) *StoreConfig {
+	c.BaseTableSize = v
+	return c
+}
+
+// WithBaseLevelSize returns [StorageConfig] with BaseLevelSize set to the given value.
+func (c *StoreConfig) WithBaseLevelSize(v int64) *StoreConfig {
+	c.BaseLevelSize = v
+	return c
+}
+
+// WithValueLogFileSize returns [StorageConfig] with ValueLogFileSize set to the given value.
+func (c *StoreConfig) WithValueLogFileSize(v int64) *StoreConfig {
+	c.ValueLogFileSize = v
+	return c
+}
+
+// WithValueLogMaxEntries returns [StorageConfig] with ValueLogMaxEntries set to the given value.
+func (c *StoreConfig) WithValueLogMaxEntries(v uint32) *StoreConfig {
+	c.ValueLogMaxEntries = v
+	return c
+}
+
+// WithNumMemtables returns [StorageConfig] with NumMemtables set to the given value.
+func (c *StoreConfig) WithNumMemtables(v int) *StoreConfig {
+	c.NumMemtables = v
+	return c
+}
+
+// WithMemTableSize returns [StorageConfig] with MemTableSize set to the given value.
+func (c *StoreConfig) WithMemTableSize(v int64) *StoreConfig {
+	c.MemTableSize = v
+	return c
+}
+
+// WithBlockSize returns [StorageConfig] with BlockSize set to the given value.
+func (c *StoreConfig) WithBlockSize(v int) *StoreConfig {
+	c.BlockSize = v
+	return c
+}
+
+// WithBlockCacheSize returns [StorageConfig] with BlockCacheSize set to the given value.
+func (c *StoreConfig) WithBlockCacheSize(v int64) *StoreConfig {
+	c.BlockCacheSize = v
+	return c
+}
+
+// WithNumLevelZeroTables returns [StorageConfig] with NumLevelZeroTables set to the given value.
+func (c *StoreConfig) WithNumLevelZeroTables(v int) *StoreConfig {
+	c.NumLevelZeroTables = v
+	return c
+}
+
+// WithNumLevelZeroTablesStall returns [StorageConfig] with NumLevelZeroTablesStall set to the given value.
+func (c *StoreConfig) WithNumLevelZeroTablesStall(v int) *StoreConfig {
+	c.NumLevelZeroTablesStall = v
+	return c
+}
+
+// WithNumCompactors returns [StorageConfig] with NumCompactors set to the given value.
+func (c *StoreConfig) WithNumCompactors(v int) *StoreConfig {
+	c.NumCompactors = v
+	return c
+}
+
+// WithCompactL0OnClose returns [StorageConfig] with CompactL0OnClose set to the given value.
+func (c *StoreConfig) WithCompactL0OnClose(v bool) *StoreConfig {
+	c.CompactL0OnClose = v
+	return c
+}
+
+// WithCompression returns [StorageConfig] with Compression set to the given value.
+func (c *StoreConfig) WithCompression(v bool) *StoreConfig {
+	c.Compression = v
+	return c
+}
+
 // WithGC returns [StorageConfig] with value log garbage collection enabled.
 func (c *StoreConfig) WithGC(interval time.Duration, discardRatio float64) *StoreConfig {
 	c.GCEnabled = true
