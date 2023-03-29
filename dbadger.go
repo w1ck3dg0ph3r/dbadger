@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"fmt"
 	"net"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -88,7 +87,8 @@ func Start(cfg *Config) (*DB, error) {
 		db.log = db.config.Logger
 	}
 
-	if err = db.loadCerts(); err != nil {
+	db.ca, db.cert, err = db.config.TLS.parse()
+	if err != nil {
 		return nil, err
 	}
 
@@ -261,18 +261,31 @@ func (db *DB) createStores(basePath string) error {
 	var err error
 
 	db.log.Infof("opening fsm...")
+	if db.config.DataStoreConfig == nil {
+		db.config.DataStoreConfig = DefaultDataStoreConfig()
+	}
 	db.data, err = stores.NewDataStore(
-		stores.DefaultDataStoreConfig(filepath.Join(basePath, "data")).
-			WithInMemory(db.config.InMemory).
-			WithLogger(newBadgerLogAdapter("fsm: ", db.log.Debugf)))
+		db.config.DataStoreConfig.storeConfig(
+			filepath.Join(basePath, "data"),
+			db.config.InMemory,
+			newBadgerLogAdapter("fsm: ", db.log.Debugf),
+		),
+	)
 	if err != nil {
 		return err
 	}
 
 	db.log.Infof("opening log store...")
-	db.logStore, err = stores.NewLogStore(stores.DefaultLogStoreConfig(filepath.Join(basePath, "logs")).
-		WithInMemory(db.config.InMemory).
-		WithLogger(newBadgerLogAdapter("log store: ", db.log.Debugf)))
+	if db.config.LogStoreConfig == nil {
+		db.config.LogStoreConfig = DefaultLogStoreConfig()
+	}
+	db.logStore, err = stores.NewLogStore(
+		db.config.LogStoreConfig.storeConfig(
+			filepath.Join(basePath, "logs"),
+			db.config.InMemory,
+			newBadgerLogAdapter("log store: ", db.log.Debugf),
+		),
+	)
 	if err != nil {
 		return err
 	}
@@ -282,13 +295,12 @@ func (db *DB) createStores(basePath string) error {
 		return err
 	}
 
-	const snapshotRetention = 3
 	if db.config.InMemory {
 		db.snapshotStore, err = raft.NewInmemSnapshotStore(), nil
 	} else {
 		db.snapshotStore, err = raft.NewFileSnapshotStoreWithLogger(
 			basePath,
-			snapshotRetention,
+			db.config.SnapshotRetention,
 			newRaftLogAdapter("snapshot store: ", db.log.Debugf),
 		)
 	}
@@ -335,9 +347,14 @@ func (db *DB) startRaft(bootstrap bool, recover bool, join Address) error {
 	db.raftConfig = raft.DefaultConfig()
 	db.raftConfig.LocalID = raft.ServerID(db.Addr())
 	db.raftConfig.Logger = newRaftLogAdapter("raft: ", db.log.Debugf)
-	db.raftConfig.HeartbeatTimeout = 150 * time.Millisecond
-	db.raftConfig.ElectionTimeout = 150 * time.Millisecond
-	db.raftConfig.LeaderLeaseTimeout = 75 * time.Millisecond
+	db.raftConfig.HeartbeatTimeout = db.config.HeartbeatTimeout
+	db.raftConfig.ElectionTimeout = db.config.ElectionTimeout
+	db.raftConfig.LeaderLeaseTimeout = db.config.LeaderLeaseTimeout
+	db.raftConfig.CommitTimeout = db.config.CommitTimeout
+	db.raftConfig.SnapshotInterval = db.config.SnapshotInterval
+	db.raftConfig.SnapshotThreshold = db.config.SnapshotThreshold
+	db.raftConfig.TrailingLogs = db.config.TrailingLogs
+	db.raftConfig.NoSnapshotRestoreOnStart = true
 
 	if db.tlsEnabled() {
 		db.raftTransport = mux.NewRaftTransportTLS(db.muxer, raftStream, 3, 1*time.Second, db.tlsConfig(), db.raftConfig.Logger)
@@ -556,40 +573,6 @@ func (db *DB) logConfiguration(log logFunc) {
 		servers = append(servers, s)
 	}
 	log("current configuration: [%s]", strings.Join(servers, ", "))
-}
-
-func (db *DB) loadCerts() error {
-	if db.config.TLS.CAFile != "" {
-		buf, err := os.ReadFile(db.config.TLS.CAFile)
-		if err != nil {
-			return fmt.Errorf("load ca file: %w", err)
-		}
-		db.ca = x509.NewCertPool()
-		db.ca.AppendCertsFromPEM(buf)
-	}
-
-	if db.config.TLS.CertFile != "" && db.config.TLS.KeyFile != "" {
-		cert, err := tls.LoadX509KeyPair(db.config.TLS.CertFile, db.config.TLS.KeyFile)
-		if err != nil {
-			return fmt.Errorf("load cert/key pair: %w", err)
-		}
-		db.cert = &cert
-	}
-
-	if len(db.config.TLS.CA) > 0 {
-		db.ca = x509.NewCertPool()
-		db.ca.AppendCertsFromPEM(db.config.TLS.CA)
-	}
-
-	if len(db.config.TLS.Cert) > 0 && len(db.config.TLS.Key) > 0 {
-		cert, err := tls.X509KeyPair(db.config.TLS.Cert, db.config.TLS.Key)
-		if err != nil {
-			return fmt.Errorf("parse cert/key: %w", err)
-		}
-		db.cert = &cert
-	}
-
-	return nil
 }
 
 func (db *DB) tlsEnabled() bool {

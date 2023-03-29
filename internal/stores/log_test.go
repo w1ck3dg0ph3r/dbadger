@@ -169,7 +169,7 @@ func TestLogStore_DeleteRange(t *testing.T) {
 }
 
 func createLogStore(t *testing.T) *LogStore {
-	logStore, err := NewLogStore(DefaultLogStoreConfig("").WithInMemory(true))
+	logStore, err := NewLogStore(DefaultLogStoreConfig("", true))
 	assert.NoError(t, err)
 	return logStore
 }
