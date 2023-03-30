@@ -116,32 +116,17 @@ func TestCluster_NewLeaderIsElected(t *testing.T) {
 	})
 }
 
-		assert.True(t, cluster[0].IsReady())
-		assert.True(t, cluster[0].IsLeader())
+func TestCluster_MajorityLost(t *testing.T) {
+	runVariants(t, func(t *testing.T, variant Variant) {
+		cluster := createCluster(t, 3, variant)
+		cluster = removeNode(t, cluster, getClusterLeader(t, cluster))
+		cluster = removeNode(t, cluster, getClusterLeader(t, cluster))
 
-		assert.NoError(t, cluster[0].Stop())
-
-		newLeader := make(chan int)
-		go func() {
-			for {
-				leader := cluster[1].Leader()
-				if leader == "" || leader == cluster[0].Addr() {
-					continue
-				}
-				for i := 0; i < 3; i++ {
-					if leader == cluster[i].Addr() {
-						newLeader <- i
-					}
-				}
-			}
-		}()
-
-		select {
-		case leader := <-newLeader:
-			assert.NotEqual(t, 0, leader)
-		case <-time.After(5 * time.Second):
-			t.Error("leader election timeout")
-		}
+		err := retry([]error{dbadger.ErrUnavailable}, 15*time.Second, func() error {
+			_, err := cluster[0].GetString(context.Background(), "key", dbadger.LeaderPreference)
+			return err
+		})
+		assert.ErrorIs(t, err, dbadger.ErrNoLeader)
 
 		stopCluster(t, cluster)
 	})
