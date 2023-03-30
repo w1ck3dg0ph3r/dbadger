@@ -21,7 +21,7 @@ type Variant struct {
 var variants = []Variant{
 	{Name: "inmemory", InMemory: true, TLS: false},
 	{Name: "inmemory_tls", InMemory: true, TLS: true},
-	// {Name: "ondisk", InMemory: false, TLS: false},
+	{Name: "ondisk", InMemory: false, TLS: false},
 }
 
 func runVariants(t *testing.T, f func(t *testing.T, variant Variant)) {
@@ -43,6 +43,7 @@ func createServer(t testing.TB, bind dbadger.Address, bootstrap bool, join dbadg
 		cfg = cfg.WithTLS(cert.CA, cert.Cert, cert.Key)
 	}
 	cfg = cfg.WithBootstrap(bootstrap).WithJoin(join).WithRecover(false)
+	cfg.DisableLeaveOnStop = true
 	// cfg.WithLogger(testLogger.WithField("server", bind))
 
 	dbCh := make(chan *dbadger.DB)
@@ -66,19 +67,19 @@ func createServer(t testing.TB, bind dbadger.Address, bootstrap bool, join dbadg
 }
 
 func createCluster(t testing.TB, servers int, variant Variant) []*dbadger.DB {
-	var serverNames []string
+	var serverAddrs []string
 	for i := 1; i <= servers; i++ {
-		serverNames = append(serverNames, fmt.Sprintf("127.0.0.1:%d", 7420+i))
+		serverAddrs = append(serverAddrs, fmt.Sprintf("127.0.0.1:%d", 7420+i))
 	}
 
 	var certs []TestCert
 	if variant.TLS {
-		certs = GenerateTestCertificates(serverNames)
+		certs = GenerateTestCertificates(serverAddrs)
 	}
 
 	var cluster []*dbadger.DB
 	for i := 0; i < servers; i++ {
-		bind := dbadger.Address(serverNames[i])
+		bind := dbadger.Address(serverAddrs[i])
 		bootstrap := i == 0
 		join := dbadger.Address("")
 		if i > 0 {
@@ -95,7 +96,64 @@ func createCluster(t testing.TB, servers int, variant Variant) []*dbadger.DB {
 		}
 		cluster = append(cluster, server)
 	}
+
+	assert.True(t, cluster[0].IsLeader())
+	for i := range serverAddrs {
+		assertClusterNodes(t, cluster[i], serverAddrs)
+	}
+
 	return cluster
+}
+
+func removeNode(t testing.TB, cluster []*dbadger.DB, node int) []*dbadger.DB {
+	assert.NoError(t, cluster[node].Stop())
+	res := make([]*dbadger.DB, 0, len(cluster)-1)
+	res = append(res, cluster[:node]...)
+	res = append(res, cluster[node+1:]...)
+	return res
+}
+
+func getClusterLeader(t testing.TB, cluster []*dbadger.DB) int {
+	const timeout = 15 * time.Second
+	leaderCh := make(chan int)
+	go func() {
+		for {
+			leaderAddr := cluster[0].Leader()
+			for leaderAddr == "" {
+				time.Sleep(500 * time.Millisecond)
+				leaderAddr = cluster[0].Leader()
+			}
+			for i := range cluster {
+				if cluster[i].Addr() == leaderAddr {
+					leaderCh <- i
+					return
+				}
+			}
+		}
+	}()
+	select {
+	case <-time.After(timeout):
+		t.Fatal("get leader timed out")
+	case leader := <-leaderCh:
+		return leader
+	}
+	return 0
+}
+
+func assertClusterNodes(t testing.TB, server *dbadger.DB, expected []string) {
+	nodes := server.Nodes()
+	for _, addr := range expected {
+		present := false
+		for _, nodeAddr := range nodes {
+			if addr == string(nodeAddr) {
+				present = true
+				break
+			}
+		}
+		if !present {
+			t.Errorf(`node "%s" is not present in cluster`, addr)
+		}
+	}
 }
 
 func stopCluster(t testing.TB, cluster []*dbadger.DB) {
@@ -109,32 +167,29 @@ type dummyerr struct{}
 
 func (dummyerr) Error() string { return "" }
 
-func retry(maxAttempts int, timeout time.Duration, f func() error) error {
-	var err error = dummyerr{}
-	attempts := 0
-	backoff := 300 * time.Millisecond
+func retry(targets []error, timout time.Duration, f func() error) error {
 	start := time.Now()
+	backoff := 300 * time.Millisecond
+	err := f()
 	for err != nil {
-		err = f()
-		if err == nil {
-			return nil
-		}
-		if !errors.Is(err, dbadger.ErrUnavailable) &&
-			!errors.Is(err, dbadger.ErrNoLeader) &&
-			!errors.Is(err, dbadger.ErrNotFound) {
+		if err == nil || time.Since(start) > timout {
 			return err
 		}
-		attempts++
-		if attempts >= maxAttempts {
-			return err
+		targetError := false
+		for _, target := range targets {
+			if errors.Is(err, target) {
+				targetError = true
+				break
+			}
 		}
-		if time.Since(start) > timeout {
+		if !targetError {
 			return err
 		}
 		time.Sleep(backoff)
-		backoff *= 2
+		backoff += 300 * time.Millisecond
+		err = f()
 	}
-	return nil
+	return err
 }
 
 var testLogger = newLogger()

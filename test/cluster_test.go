@@ -28,9 +28,7 @@ func TestCluster_HappyTimes(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				for i := g * count; i < g*count+count; i++ {
-					err := retry(10, 3*time.Second, func() error {
-						return cluster[i%len(cluster)].Set(context.Background(), keys[i], values[i])
-					})
+					err := cluster[i%len(cluster)].Set(context.Background(), keys[i], values[i])
 					assert.NoError(t, err)
 				}
 			}()
@@ -45,7 +43,7 @@ func TestCluster_HappyTimes(t *testing.T) {
 				defer wg.Done()
 				for i := g * count; i < g*count+count; i++ {
 					var value []byte
-					err := retry(10, 3*time.Second, func() error {
+					err := retry([]error{dbadger.ErrUnavailable, dbadger.ErrNotFound}, 3*time.Second, func() error {
 						var err error
 						value, err = cluster[i%len(cluster)].Get(context.Background(), keys[i], dbadger.LocalPreference)
 						return err
@@ -76,7 +74,7 @@ func TestCluster_ReplicationHappens(t *testing.T) {
 			assert.NoError(t, err)
 
 			var res []byte
-			err = retry(10, 3*time.Second, func() error {
+			err = retry([]error{dbadger.ErrUnavailable, dbadger.ErrNotFound}, 3*time.Second, func() error {
 				var err error
 				res, err = follower.Get(context.Background(), key, dbadger.LeaderPreference)
 				return err
@@ -93,7 +91,7 @@ func TestCluster_ReplicationHappens(t *testing.T) {
 			assert.NoError(t, err)
 
 			var res []byte
-			assert.NoError(t, retry(10, 3*time.Second, func() error {
+			assert.NoError(t, retry([]error{dbadger.ErrNotFound}, 3*time.Second, func() error {
 				var err error
 				res, err = follower.Get(context.Background(), key, dbadger.LocalPreference)
 				return err
@@ -108,6 +106,15 @@ func TestCluster_ReplicationHappens(t *testing.T) {
 func TestCluster_NewLeaderIsElected(t *testing.T) {
 	runVariants(t, func(t *testing.T, variant Variant) {
 		cluster := createCluster(t, 3, variant)
+		prevLeader := getClusterLeader(t, cluster)
+		prevLeaderAddr := cluster[prevLeader].Addr()
+		cluster = removeNode(t, cluster, prevLeader)
+		newLeader := getClusterLeader(t, cluster)
+		newLeaderAddr := cluster[newLeader].Addr()
+		assert.NotEqual(t, prevLeaderAddr, newLeaderAddr)
+		stopCluster(t, cluster)
+	})
+}
 
 		assert.True(t, cluster[0].IsReady())
 		assert.True(t, cluster[0].IsLeader())
@@ -150,7 +157,7 @@ func TestCluster_BackupRestore(t *testing.T) {
 		assert.NoError(t, cluster[0].SetMany(context.Background(), keys, values))
 
 		// Wait untill replication is done
-		assert.NoError(t, retry(10, 3*time.Second, func() error {
+		assert.NoError(t, retry([]error{dbadger.ErrNotFound}, 3*time.Second, func() error {
 			_, err := cluster[2].Get(context.Background(), keys[len(keys)-1], dbadger.LocalPreference)
 			return err
 		}))
@@ -160,7 +167,7 @@ func TestCluster_BackupRestore(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Delete all keys
-		err = retry(10, 3*time.Second, func() error {
+		err = retry([]error{dbadger.ErrUnavailable, dbadger.ErrConflict}, 3*time.Second, func() error {
 			return cluster[0].DeleteAll(context.Background())
 		})
 		assert.NoError(t, err)
@@ -168,7 +175,7 @@ func TestCluster_BackupRestore(t *testing.T) {
 		// Restore snapshot
 		assert.NoError(t, cluster[0].Restore(snapshotId))
 
-		retry(10, 3*time.Second, func() error {
+		retry([]error{dbadger.ErrUnavailable, dbadger.ErrNotFound}, 3*time.Second, func() error {
 			_, err := cluster[0].Get(context.Background(), keys[len(keys)-1], dbadger.LeaderPreference)
 			return err
 		})
