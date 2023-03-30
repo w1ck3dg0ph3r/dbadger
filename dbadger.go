@@ -202,7 +202,7 @@ func (db *DB) Stop() error {
 	}
 	close(db.shutdownCh)
 
-	if db.raftNode != nil {
+	if db.raftNode != nil && !db.config.DisableLeaveOnStop {
 		db.log.Infof("leaving cluster...")
 		_, _ = db.service.RemovePeer(context.Background(), &rpc.CommandRemovePeer{Addr: string(db.config.Bind)})
 	}

@@ -58,6 +58,11 @@ type Config struct {
 	// it will forward the request to the cluster's leader.
 	Join Address
 
+	// DisableLeaveOnStop makes the node Stop without leaving the cluster.
+	//
+	// Setting this to true is useful for simulation of node failure during testing.
+	DisableLeaveOnStop bool
+
 	//////////////////////////////////////////////////////////////
 	// Consensus options
 	//////////////////////////////////////////////////////////////
