@@ -164,20 +164,13 @@ func newApplication() *Application {
 func (app *Application) run() {
 	flags := parseFlags()
 
-	config := &dbadger.Config{
-		Path:     flags.Path,
-		InMemory: flags.Inmem,
-		Bind:     dbadger.Address(flags.Bind),
-		TLS: dbadger.TLSConfig{
-			CAFile:   flags.TLS.CAFile,
-			CertFile: flags.TLS.CertFile,
-			KeyFile:  flags.TLS.KeyFile,
-		},
-		Bootstrap: flags.Bootstrap,
-		Recover:   flags.Recover,
-		Join:      dbadger.Address(flags.Join),
-		Logger:    app.logger,
-	}
+	config := dbadger.DefaultConfig(flags.Path, dbadger.Address(flags.Bind)).
+		WithInMemory(flags.Inmem).
+		WithTLSFiles(flags.TLS.CAFile, flags.TLS.CertFile, flags.TLS.KeyFile).
+		WithBootstrap(flags.Bootstrap).
+		WithRecover(flags.Recover).
+		WithJoin(dbadger.Address(flags.Join)).
+		WithLogger(app.logger)
 
 	if flags.Bootstrap && !flags.Inmem && filepath.IsLocal(flags.Path) {
 		_ = os.RemoveAll(flags.Path)
